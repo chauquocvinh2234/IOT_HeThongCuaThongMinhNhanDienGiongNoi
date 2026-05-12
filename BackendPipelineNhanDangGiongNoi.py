@@ -7,8 +7,36 @@ from pymongo import MongoClient
 from bson.objectid import ObjectId
 from werkzeug.security import generate_password_hash, check_password_hash
 from pydub import AudioSegment
+from flasgger import Swagger
 
 app = Flask(__name__)
+
+# Cấu hình Swagger UI
+swagger_config = {
+    "headers": [],
+    "specs": [
+        {
+            "endpoint": 'apispec_1',
+            "route": '/apispec_1.json',
+            "rule_filter": lambda rule: True,
+            "model_filter": lambda tag: True,
+        }
+    ],
+    "static_url_path": "/flasgger_static",
+    "swagger_ui": True,
+    "specs_route": "/apidocs/"
+}
+
+swagger_template = {
+    "swagger": "2.0",
+    "info": {
+        "title": "IOT Smart Door API",
+        "description": "Tài liệu API cho hệ thống Nhà Thông Minh nhận diện giọng nói.",
+        "version": "1.0.0"
+    }
+}
+
+swagger = Swagger(app, config=swagger_config, template=swagger_template)
 
 # ==========================================
 # CẤU HÌNH MONGODB ATLAS
@@ -77,12 +105,33 @@ def compute_cosine_similarity(v1, v2):
 def login():
     """
     Đăng nhập người dùng.
-
-    Đầu vào (JSON):
-        - username : Tên đăng nhập (bắt buộc)
-        - password : Mật khẩu (bắt buộc)
-
-    Đầu ra: JSON chứa thông tin người dùng nếu đăng nhập thành công.
+    ---
+    tags:
+      - Xác thực (Authentication)
+    consumes:
+      - application/json
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          properties:
+            username:
+              type: string
+              example: admin
+            password:
+              type: string
+              example: 123456
+    responses:
+      200:
+        description: Đăng nhập thành công
+      400:
+        description: Lỗi dữ liệu gửi lên
+      401:
+        description: Sai tài khoản hoặc mật khẩu
+      500:
+        description: Lỗi máy chủ
     """
     data = request.get_json()
 
@@ -140,14 +189,41 @@ def login():
 def register_voice():
     """
     Đăng ký người dùng mới kèm giọng nói.
-
-    Đầu vào (form-data):
-        - username   : Tên đăng nhập (bắt buộc)
-        - password   : Mật khẩu (bắt buộc)
-        - fullname   : Họ và tên đầy đủ (bắt buộc)
-        - audio      : File .wav ghi âm giọng nói (bắt buộc)
-
-    Đầu ra: JSON xác nhận đăng ký thành công/thất bại.
+    ---
+    tags:
+      - Xác thực (Authentication)
+    consumes:
+      - multipart/form-data
+    parameters:
+      - in: formData
+        name: username
+        type: string
+        required: true
+        description: Tên đăng nhập
+      - in: formData
+        name: password
+        type: string
+        required: true
+        description: Mật khẩu
+      - in: formData
+        name: fullname
+        type: string
+        required: true
+        description: Họ và tên đầy đủ
+      - in: formData
+        name: audio
+        type: file
+        required: true
+        description: File âm thanh ghi âm giọng nói (.wav, .m4a)
+    responses:
+      201:
+        description: Đăng ký thành công
+      400:
+        description: Thiếu thông tin hoặc file âm thanh
+      409:
+        description: Username đã tồn tại
+      500:
+        description: Lỗi hệ thống
     """
     TEMP_RAW_FILE = "temp_register_raw"   # File gốc từ frontend (có thể là .m4a, .wav, ...)
     TEMP_WAV_FILE = "temp_register.wav"    # File sau khi convert sang WAV 16kHz mono
@@ -250,13 +326,26 @@ def register_voice():
 @app.route('/verify', methods=['POST'])
 def verify_voice():
     """
-    So khớp giọng nói gửi lên với toàn bộ giọng nói đã đăng ký trong MongoDB.
-
-    Đầu vào:
-        - File .wav gửi qua raw body (content-type: audio/wav)
-        - Hoặc file upload với key 'audio'
-
-    Đầu ra: JSON chứa kết quả ACCEPTED/REJECTED.
+    Xác thực giọng nói (Nhận diện mở cửa).
+    ---
+    tags:
+      - Nhận diện (Verification)
+    consumes:
+      - multipart/form-data
+      - audio/wav
+    parameters:
+      - in: formData
+        name: audio
+        type: file
+        required: false
+        description: File âm thanh chứa giọng nói cần mở cửa (Upload file qua form-data hoặc gửi trực tiếp dạng raw binary).
+    responses:
+      200:
+        description: Kết quả xác thực (ACCEPTED hoặc REJECTED)
+      400:
+        description: Không tìm thấy file âm thanh
+      500:
+        description: Lỗi máy chủ
     """
     FILE_KIEM_TRA = "temp_received.wav"
 
@@ -346,10 +435,15 @@ def verify_voice():
 @app.route('/history', methods=['GET'])
 def get_door_history():
     """
-    Lấy toàn bộ lịch sử mở cửa từ MongoDB.
-
-    Đầu ra: JSON chứa danh sách các lần mở cửa,
-            sắp xếp theo thời gian mới nhất trước.
+    Lấy toàn bộ lịch sử mở cửa.
+    ---
+    tags:
+      - Lịch sử (History)
+    responses:
+      200:
+        description: Danh sách lịch sử mở cửa, sắp xếp mới nhất trước
+      500:
+        description: Lỗi máy chủ
     """
     try:
         # Lấy toàn bộ lịch sử, sắp xếp mới nhất trước
@@ -383,12 +477,37 @@ def get_door_history():
 @app.route('/changeInformation', methods=['POST'])
 def change_information():
     """
-    Cập nhật họ tên và/hoặc giọng nói.
-
-    Đầu vào (form-data):
-        - user_id    : ID của người dùng (bắt buộc)
-        - fullname   : Họ và tên mới (tùy chọn)
-        - audio      : File .wav giọng nói mới (tùy chọn)
+    Cập nhật thông tin / giọng nói.
+    ---
+    tags:
+      - Người dùng (User)
+    consumes:
+      - multipart/form-data
+    parameters:
+      - in: formData
+        name: user_id
+        type: string
+        required: true
+        description: ID của người dùng (bắt buộc)
+      - in: formData
+        name: fullname
+        type: string
+        required: false
+        description: Họ và tên mới (tùy chọn)
+      - in: formData
+        name: audio
+        type: file
+        required: false
+        description: File giọng nói mới (tùy chọn)
+    responses:
+      200:
+        description: Cập nhật thành công
+      400:
+        description: Lỗi dữ liệu đầu vào
+      404:
+        description: Không tìm thấy user
+      500:
+        description: Lỗi hệ thống
     """
     user_id = request.form.get('user_id')
     fullname = request.form.get('fullname')
