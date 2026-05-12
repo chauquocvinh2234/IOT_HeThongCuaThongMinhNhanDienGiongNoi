@@ -15,7 +15,7 @@ app = Flask(__name__)
 # Thay connection string bên dưới bằng connection string thật của bạn
 MONGO_URI = os.environ.get(
     "MONGO_URI",
-    "mongodb+srv://vinhplaykennen:Chauvinh22032004@iotcluster0.9dlnj5z.mongodb.net/?appName=IOTCluster0"
+    "mongodb+srv://vinhplaykennen:xxxx@iotcluster0.9dlnj5z.mongodb.net/?appName=IOTCluster0"
 )
 DB_NAME = "iot_smart_door"
 
