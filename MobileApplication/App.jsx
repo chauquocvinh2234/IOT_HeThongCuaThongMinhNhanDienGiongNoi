@@ -13,6 +13,7 @@ import HistoryScreen from './src/screens/HistoryScreen.jsx';
 import SettingsScreen from './src/screens/SettingsScreen.jsx';
 import LoginScreen from './src/screens/LoginScreen.jsx';
 import RegisterScreen from './src/screens/RegisterScreen.jsx';
+import ChangeInformationScreen from './src/screens/ChangeInformationScreen.jsx';
 import { AuthProvider } from './src/contexts/AuthContext.jsx';
 
 const Tab = createBottomTabNavigator();
@@ -116,6 +117,7 @@ export default function App() {
               <Stack.Screen name="Login" component={LoginScreen} />
               <Stack.Screen name="Register" component={RegisterScreen} />
               <Stack.Screen name="Main" component={MainTabs} />
+              <Stack.Screen name="ChangeInformation" component={ChangeInformationScreen} options={{ animation: 'slide_from_right' }} />
             </Stack.Navigator>
           </NavigationContainer>
         </View>

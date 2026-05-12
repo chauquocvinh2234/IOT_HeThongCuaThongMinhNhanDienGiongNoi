@@ -4,6 +4,7 @@ import os
 import numpy as np
 from datetime import datetime
 from pymongo import MongoClient
+from bson.objectid import ObjectId
 from werkzeug.security import generate_password_hash, check_password_hash
 from pydub import AudioSegment
 
@@ -373,6 +374,81 @@ def get_door_history():
 
     except Exception as e:
         print(f"[!] Lỗi lấy lịch sử: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ==========================================
+# 5. API ĐỔI THÔNG TIN / GIỌNG NÓI - /changeInformation
+# ==========================================
+@app.route('/changeInformation', methods=['POST'])
+def change_information():
+    """
+    Cập nhật họ tên và/hoặc giọng nói.
+
+    Đầu vào (form-data):
+        - user_id    : ID của người dùng (bắt buộc)
+        - fullname   : Họ và tên mới (tùy chọn)
+        - audio      : File .wav giọng nói mới (tùy chọn)
+    """
+    user_id = request.form.get('user_id')
+    fullname = request.form.get('fullname')
+    audio_file = request.files.get('audio')
+
+    if not user_id:
+        return jsonify({"status": "error", "message": "Thiếu user_id"}), 400
+
+    try:
+        # Tìm user
+        user = users_collection.find_one({"_id": ObjectId(user_id)})
+        if not user:
+            return jsonify({"status": "error", "message": "Người dùng không tồn tại"}), 404
+
+        update_fields = {}
+
+        # Nếu có cập nhật tên
+        if fullname and fullname.strip() != "":
+            update_fields["personal_information.fullname"] = fullname.strip()
+
+        # Nếu có cập nhật giọng nói
+        if audio_file and audio_file.filename != '':
+            TEMP_RAW_FILE = "temp_update_raw"
+            TEMP_WAV_FILE = "temp_update.wav"
+            
+            original_ext = os.path.splitext(audio_file.filename)[1] or '.m4a'
+            raw_path = TEMP_RAW_FILE + original_ext
+
+            audio_file.save(raw_path)
+            try:
+                # Trích xuất embedding mới
+                convert_to_wav_16k_mono(raw_path, TEMP_WAV_FILE)
+                embedding = get_embedding(TEMP_WAV_FILE)
+                embedding_list = embedding.tolist()
+                
+                update_fields["personal_information.speech_vector"] = embedding_list
+            finally:
+                for f in [raw_path, TEMP_WAV_FILE]:
+                    if os.path.exists(f):
+                        os.remove(f)
+
+        if not update_fields:
+            return jsonify({"status": "error", "message": "Không có thông tin nào để cập nhật"}), 400
+
+        # Cập nhật vào DB
+        users_collection.update_one({"_id": ObjectId(user_id)}, {"$set": update_fields})
+        
+        # Nếu có thay đổi tên, trả về tên mới
+        new_fullname = fullname.strip() if (fullname and fullname.strip() != "") else user["personal_information"]["fullname"]
+
+        print(f"[+] Đã cập nhật thông tin cho: {new_fullname} ({user['username']})")
+
+        return jsonify({
+            "status": "success",
+            "message": "Cập nhật thông tin thành công!",
+            "new_fullname": new_fullname
+        })
+
+    except Exception as e:
+        print(f"[!] Lỗi cập nhật thông tin: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 

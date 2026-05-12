@@ -79,7 +79,7 @@ export default function SettingsScreen({ navigation }) {
             className="flex-row items-center p-4 mx-1"
             activeOpacity={0.7}
             onPress={() => {
-              Alert.alert('Thông báo', 'Tính năng chỉnh sửa thông tin sẽ được cập nhật trong phiên bản tiếp theo.');
+              navigation.navigate('ChangeInformation');
             }}
           >
             <View
@@ -93,7 +93,7 @@ export default function SettingsScreen({ navigation }) {
                 Chỉnh sửa thông tin
               </Text>
               <Text className="text-xs text-textSecondary">
-                Cập nhật họ tên, mật khẩu
+                Cập nhật họ tên, giọng nói
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={COLORS.textSecondary} />
