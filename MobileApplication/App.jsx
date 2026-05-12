@@ -9,6 +9,7 @@ import { View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import DashboardScreen from './src/screens/DashboardScreen.jsx';
+import HistoryScreen from './src/screens/HistoryScreen.jsx';
 import SettingsScreen from './src/screens/SettingsScreen.jsx';
 import LoginScreen from './src/screens/LoginScreen.jsx';
 import RegisterScreen from './src/screens/RegisterScreen.jsx';
@@ -19,6 +20,10 @@ const Stack = createNativeStackNavigator();
 
 function DashboardTabIcon({ color, size }) {
   return <Ionicons name="grid-outline" size={size} color={color} />;
+}
+
+function HistoryTabIcon({ color, size }) {
+  return <Ionicons name="time-outline" size={size} color={color} />;
 }
 
 function SettingsTabIcon({ color, size }) {
@@ -51,13 +56,23 @@ function MainTabs() {
         name="Dashboard"
         component={DashboardScreen}
         options={{
+          tabBarLabel: 'Trang chủ',
           tabBarIcon: DashboardTabIcon,
+        }}
+      />
+      <Tab.Screen
+        name="History"
+        component={HistoryScreen}
+        options={{
+          tabBarLabel: 'Lịch sử',
+          tabBarIcon: HistoryTabIcon,
         }}
       />
       <Tab.Screen
         name="Settings"
         component={SettingsScreen}
         options={{
+          tabBarLabel: 'Cài đặt',
           tabBarIcon: SettingsTabIcon,
         }}
       />
