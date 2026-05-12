@@ -1,0 +1,14 @@
+# Python
+env/
+__pycache__/
+*.pyc
+
+# Vscode/IDE
+.vscode/
+.idea/
+
+# Temp audio files
+temp_register.wav
+temp_register_raw*
+temp_received.wav
+converted.wav
