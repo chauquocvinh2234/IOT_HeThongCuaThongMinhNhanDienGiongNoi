@@ -32,12 +32,8 @@ Servo doorServo;
 #define RECORD_TIME_SEC 5
 const uint32_t wavDataSize = RECORD_TIME_SEC * SAMPLE_RATE * 2;
 
-// Declare Wi-fi configuration
-const char* ssid = "vinhplaykennen";
-const char* password = "Chauvinh22032004@Aa";
-
-// Declare IP of the server that's running
-const char* serverName = "https://broken-unrigged-scolding.ngrok-free.dev/verify";
+// Include secrets
+#include "secrets.h"
 // -------------------------------------------------------------------------
 
 // Declare function prototypes

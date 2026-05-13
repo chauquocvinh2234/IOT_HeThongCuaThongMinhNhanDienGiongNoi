@@ -12,3 +12,10 @@ temp_register.wav
 temp_register_raw*
 temp_received.wav
 converted.wav
+
+# Environment variables and secrets
+.env
+Backend/.env
+MobileApplication/.env
+secrets.h
+PipelineNhanDangGiongNoi/secrets.h

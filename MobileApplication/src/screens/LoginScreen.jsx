@@ -30,7 +30,7 @@ export default function LoginScreen({ navigation }) {
     setIsLoading(true);
 
     try {
-      const response = await fetch('https://broken-unrigged-scolding.ngrok-free.dev/login', {
+      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

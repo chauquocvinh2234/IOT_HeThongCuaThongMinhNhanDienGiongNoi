@@ -1,6 +1,11 @@
+import os
+from dotenv import load_dotenv
+
+# Load variables from .env file
+load_dotenv()
+
 from flask import Flask, request, jsonify
 import wespeaker
-import os
 import numpy as np
 from datetime import datetime
 from pymongo import MongoClient
@@ -8,6 +13,7 @@ from bson.objectid import ObjectId
 from werkzeug.security import generate_password_hash, check_password_hash
 from pydub import AudioSegment
 from flasgger import Swagger
+from pyngrok import ngrok
 
 app = Flask(__name__)
 
@@ -42,10 +48,7 @@ swagger = Swagger(app, config=swagger_config, template=swagger_template)
 # CẤU HÌNH MONGODB ATLAS
 # ==========================================
 # Thay connection string bên dưới bằng connection string thật của bạn
-MONGO_URI = os.environ.get(
-    "MONGO_URI",
-    "mongodb+srv://vinhplaykennen:xxxx@iotcluster0.9dlnj5z.mongodb.net/?appName=IOTCluster0"
-)
+MONGO_URI = os.environ.get("MONGO_URI")
 DB_NAME = "iot_smart_door"
 
 client = MongoClient(MONGO_URI)
@@ -60,7 +63,7 @@ print("[+] Đã kết nối MongoDB Atlas thành công!")
 # ==========================================
 print("[*] Đang nạp mô hình WeSpeaker...")
 model = wespeaker.load_model('english')
-model.set_device('cpu')
+model.set_device("cpu")
 print("[+] Đã nạp mô hình thành công!")
 
 
@@ -572,4 +575,17 @@ def change_information():
 
 
 if __name__ == '__main__':
+    # 1. Dán Auth Token của bạn vào đây
+    ngrok_token = os.environ.get("NGROK_AUTH_TOKEN")
+    if ngrok_token:
+        ngrok.set_auth_token(ngrok_token)
+    
+    # 2. Khởi tạo đường hầm với domain cố định
+    ngrok_domain = os.environ.get("NGROK_DOMAIN", "broken-unrigged-scolding.ngrok-free.dev")
+    public_url = ngrok.connect(5000, domain=ngrok_domain).public_url
+    
+    print(f"\n[🚀] NGROK TUNNEL ĐÃ MỞ CỐ ĐỊNH TẠI: {public_url}")
+    print(f"[🚀] API Swagger test: {public_url}/apidocs/\n")
+
+    # 3. Khởi chạy server Flask
     app.run(host='0.0.0.0', port=5000)
