@@ -11,30 +11,29 @@
 
 // -------------------------------------------------------------------------
 // Declare the configuration of Servo
-#define SERVO_PIN 15
+#define SERVO_PIN 13
 Servo doorServo;
 
 // Declare the configuration for HC-SR04
-#define TRIG_PIN 6
-#define ECHO_PIN 7
+#define TRIG_PIN 41 
+#define ECHO_PIN 42 
 #define DISTANCE_THRESHOLD 10
+#define Y_LED_PIN 47 
+#define G_LED_PIN 48 
 
-// Declare the configuration for LEDs
-#define Y_LED_PIN 4
-#define G_LED_PIN 5
-#define G1_LED_PIN 41
-#define R_LED_PIN 39
-#define R1_LED_PIN 10
-
-#define BUTTON_PIN 9
+// Declare the configuration for Button
+#define R_LED_PIN 17 
+#define BUTTON_PIN 18 
 
 // Declare the configuration for Buzzer
-#define BUZZER_PIN 8
+#define BUZZER_PIN 5
+#define G1_LED_PIN 6
+#define R1_LED_PIN 4
 
 // Declare the configuration for INMP441 
-#define I2S_WS_PIN 16
-#define I2S_SCK_PIN 17
-#define I2S_SD_PIN 18
+#define I2S_WS_PIN 10 
+#define I2S_SCK_PIN 11 
+#define I2S_SD_PIN 12 
 #define I2S_PORT I2S_NUM_0
 #define SAMPLE_RATE 16000
 
@@ -71,8 +70,8 @@ void setup() {
   pinMode(Y_LED_PIN, OUTPUT);
   pinMode(G_LED_PIN, OUTPUT);
   pinMode(G1_LED_PIN, OUTPUT);
-  pinMode(R_LED_PIN, OUTPUT);
   pinMode(R1_LED_PIN, OUTPUT);
+  pinMode(R_LED_PIN, OUTPUT);
   pinMode(BUZZER_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT);
 
@@ -110,7 +109,7 @@ void controlSystemLogic(float distance, int distance_threshold){
   } else{
     digitalWrite(Y_LED_PIN, HIGH);
     digitalWrite(G_LED_PIN, LOW);
-    digitalWrite(R1_LED_PIN, LOW); // Đảm bảo R1 tắt khi người đi khỏi
+    digitalWrite(R_LED_PIN, LOW);
   }
 }
 
@@ -214,7 +213,7 @@ void recordAndSendAudio() {
 Serial.println("[@] Hãy giữ nút để nói (Tối đa 5 giây)...");
   
   // Bật đèn R1_LED báo hiệu đang thu âm
-  digitalWrite(R1_LED_PIN, HIGH);
+  digitalWrite(R_LED_PIN, HIGH);
 
 // 3. Recording directly to RAM (Vòng lặp thu âm linh hoạt)
   // SỬA LOW THÀNH HIGH: Vòng lặp chạy chừng nào nút VẪN ĐANG BẤM (HIGH) VÀ chưa quá 5 giây
@@ -230,7 +229,7 @@ Serial.println("[@] Hãy giữ nút để nói (Tối đa 5 giây)...");
   }
 
   // Tắt đèn R1_LED báo hiệu kết thúc thu âm khi nhả nút
-  digitalWrite(R1_LED_PIN, LOW);
+  digitalWrite(R_LED_PIN, LOW);
   
   Serial.println("[@] Đã nhả nút. Kết thúc thu âm! Đang kết nối API server...");
 
@@ -305,10 +304,10 @@ Serial.println("[@] Hãy giữ nút để nói (Tối đa 5 giây)...");
         // Kích hoạt cảnh báo: Hú còi và chớp đèn đỏ 5 lần
         for(int i = 0; i < 5; i++) {
           digitalWrite(BUZZER_PIN, HIGH);  // Bật còi
-          digitalWrite(R_LED_PIN, HIGH);   // Bật đèn đỏ
+          digitalWrite(R1_LED_PIN, HIGH);   // Bật đèn đỏ
           delay(150);
           digitalWrite(BUZZER_PIN, LOW);   // Tắt còi
-          digitalWrite(R_LED_PIN, LOW);    // Tắt đèn đỏ
+          digitalWrite(R1_LED_PIN, LOW);    // Tắt đèn đỏ
           delay(150);
         }
       }
