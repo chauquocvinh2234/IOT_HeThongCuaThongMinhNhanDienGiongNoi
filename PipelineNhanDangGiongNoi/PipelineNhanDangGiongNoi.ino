@@ -4,7 +4,9 @@
 #include <ESP32Servo.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include "esp_heap_caps.h"
+#include "secrets.h"
 // -------------------------------------------------------------------------
 
 // -------------------------------------------------------------------------
@@ -20,6 +22,14 @@ Servo doorServo;
 // Declare the configuration for LEDs
 #define Y_LED_PIN 4
 #define G_LED_PIN 5
+#define G1_LED_PIN 41
+#define R_LED_PIN 39
+#define R1_LED_PIN 10
+
+#define BUTTON_PIN 9
+
+// Declare the configuration for Buzzer
+#define BUZZER_PIN 8
 
 // Declare the configuration for INMP441 
 #define I2S_WS_PIN 16
@@ -32,8 +42,6 @@ Servo doorServo;
 #define RECORD_TIME_SEC 5
 const uint32_t wavDataSize = RECORD_TIME_SEC * SAMPLE_RATE * 2;
 
-// Include secrets
-#include "secrets.h"
 // -------------------------------------------------------------------------
 
 // Declare function prototypes
@@ -62,6 +70,11 @@ void setup() {
   pinMode(ECHO_PIN, INPUT);
   pinMode(Y_LED_PIN, OUTPUT);
   pinMode(G_LED_PIN, OUTPUT);
+  pinMode(G1_LED_PIN, OUTPUT);
+  pinMode(R_LED_PIN, OUTPUT);
+  pinMode(R1_LED_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(BUTTON_PIN, INPUT);
 
   // Initialize Servo
   doorServo.attach(SERVO_PIN);
@@ -82,21 +95,22 @@ void loop() {
 
 void controlSystemLogic(float distance, int distance_threshold){
   if (distance > 0 && distance < distance_threshold){
-    // Obstacle detected, turn on GREEN, turn off RED
+    // Người vào tầm ngắm, chuyển sang chế độ CHỜ (Bật đèn Xanh)
     digitalWrite(Y_LED_PIN, LOW);
     digitalWrite(G_LED_PIN, HIGH);
     
-    Serial.println("[@] Recording your voice...");
-    recordAndSendAudio(); // Start recording process
-    
-    // Add a short delay after recording to prevent the 
-    // recording circuit from running continuously if the person remains standing there
-    Serial.println("[@] Recording finished. Waiting for next trigger...");
-    delay(2000); 
+    if (digitalRead(BUTTON_PIN) == HIGH) {
+      Serial.println("[@] Nút được bấm! Bắt đầu quá trình thu âm...");
+      recordAndSendAudio(); // Bắt đầu ghi âm
+      
+      // Delay để tránh việc vô tình ấn nháy nút nhiều lần liên tục
+      delay(1000); 
+    }
 
   } else{
     digitalWrite(Y_LED_PIN, HIGH);
     digitalWrite(G_LED_PIN, LOW);
+    digitalWrite(R1_LED_PIN, LOW); // Đảm bảo R1 tắt khi người đi khỏi
   }
 }
 
@@ -197,45 +211,52 @@ void recordAndSendAudio() {
   // Data write pointer, starting at byte position 44
   uint8_t *dataPtr = audioBuffer + 44; 
 
-  Serial.println("[@] Recording (5 seconds)...");
+Serial.println("[@] Hãy giữ nút để nói (Tối đa 5 giây)...");
   
-  // 3. Recording directly to RAM
-  while (bytesRead < wavDataSize) {
+  // Bật đèn R1_LED báo hiệu đang thu âm
+  digitalWrite(R1_LED_PIN, HIGH);
+
+// 3. Recording directly to RAM (Vòng lặp thu âm linh hoạt)
+  // SỬA LOW THÀNH HIGH: Vòng lặp chạy chừng nào nút VẪN ĐANG BẤM (HIGH) VÀ chưa quá 5 giây
+  while (digitalRead(BUTTON_PIN) == HIGH && bytesRead < wavDataSize) {
     esp_err_t result = i2s_read(I2S_PORT, &sample, sizeof(sample), &bytesIn, portMAX_DELAY);
     if (result == ESP_OK && bytesIn > 0) {
-      // 1. Dịch bit để lấy tín hiệu gốc 16-bit
-      int32_t raw_sample = sample >> 14; 
-      
-      // 2. Nhân với hệ số khuếch đại (Đổi số 5 thành mức bạn muốn. VD: 3, 5, 8...)
-      float gain = 5.0; 
-      int32_t amplified_sample = raw_sample * gain;
-
-      // 3. Khóa giới hạn (Clamp) để chống vỡ tiếng (chống tràn số nguyên 16-bit)
-      if (amplified_sample > 32767) amplified_sample = 32767;
-      if (amplified_sample < -32768) amplified_sample = -32768;
-
-      // 4. Ép kiểu về 16-bit và đưa vào buffer như cũ
-      int16_t audio_sample = (int16_t)amplified_sample;
-      
+      int16_t audio_sample = sample >> 14;
+      // Copy 2 byte of audio_sample to buffer
       memcpy(dataPtr, &audio_sample, 2);
       dataPtr += 2;
       bytesRead += 2;
     }
   }
+
+  // Tắt đèn R1_LED báo hiệu kết thúc thu âm khi nhả nút
+  digitalWrite(R1_LED_PIN, LOW);
   
-  Serial.println("[@] Audio successfully recorded! Connecting to API server...");
+  Serial.println("[@] Đã nhả nút. Kết thúc thu âm! Đang kết nối API server...");
+
+  // BƯỚC QUAN TRỌNG: Tạo lại Header cho file WAV với kích thước THỰC TẾ vừa thu được
+  generateWavHeader(audioBuffer, bytesRead, SAMPLE_RATE);
+  
+  // Tính lại tổng dung lượng thực tế để gửi đi (Data thực tế + 44 bytes header)
+  uint32_t actualTotalSizeToSend = bytesRead + 44;
 
   // 4. Send all files in RAM via the API
   if(WiFi.status() == WL_CONNECTED){
-    WiFiClient client;
+    
+    // --- BẮT ĐẦU ĐOẠN CẦN SỬA ---
+    WiFiClientSecure client;
+    client.setInsecure(); // Lệnh cực kỳ quan trọng để bỏ qua bước xác minh chứng chỉ SSL của Ngrok
+    
     HTTPClient http;
     http.begin(client, serverName);
-    
+    // --- KẾT THÚC ĐOẠN CẦN SỬA ---
+
+    http.setTimeout(10000);
     // Declare the type of send data as a WAV file
     http.addHeader("Content-Type", "audio/wav");
-
-    // Execute a POST request to send the buffer directly
-    int httpResponseCode = http.POST(audioBuffer, totalSize);
+    
+    // ĐẨY FILE ĐI VỚI DUNG LƯỢNG THỰC TẾ (Thay vì totalSize cứng 5 giây như cũ)
+    int httpResponseCode = http.POST(audioBuffer, actualTotalSizeToSend);
     
     if(httpResponseCode > 0){
       Serial.print("[@] Server response (Code ");
@@ -249,16 +270,47 @@ void recordAndSendAudio() {
       if(response.indexOf("ACCEPTED") > 0) {
         Serial.println("[@] Welcome home! The door is opening in 5 seconds.");
         
+        // --- ĐOẠN THÊM MỚI BẮT ĐẦU ---
+        // Nháy đèn xanh G1 và bíp còi 2 lần ngắn báo hiệu mở khóa thành công
+        for(int i = 0; i < 2; i++) {
+          digitalWrite(BUZZER_PIN, HIGH);
+          digitalWrite(G1_LED_PIN, HIGH);
+          delay(100); // Kêu ngắn để phân biệt với báo động
+          digitalWrite(BUZZER_PIN, LOW);
+          digitalWrite(G1_LED_PIN, LOW);
+          delay(100);
+        }
+        
+        // Bật giữ đèn G1 sáng trong suốt 5 giây cửa mở
+        digitalWrite(G1_LED_PIN, HIGH);
+        // --- ĐOẠN THÊM MỚI KẾT THÚC ---
+
+        // Mở cửa
         doorServo.write(90);
         
+        // Chờ 5 giây
         delay(5000); 
         
         Serial.println("[@] The door is autonomously closed.");
+        
+        // Đóng cửa
         doorServo.write(0);
+        
+        // Tắt đèn xanh G1 sau khi cửa đã đóng
+        digitalWrite(G1_LED_PIN, LOW);
         
       } else {
         Serial.println("[@] You're not the person who lives in this house.");
-        // Bạn có thể cho chớp nháy đèn LED đỏ ở đây để cảnh báo thêm
+        
+        // Kích hoạt cảnh báo: Hú còi và chớp đèn đỏ 5 lần
+        for(int i = 0; i < 5; i++) {
+          digitalWrite(BUZZER_PIN, HIGH);  // Bật còi
+          digitalWrite(R_LED_PIN, HIGH);   // Bật đèn đỏ
+          delay(150);
+          digitalWrite(BUZZER_PIN, LOW);   // Tắt còi
+          digitalWrite(R_LED_PIN, LOW);    // Tắt đèn đỏ
+          delay(150);
+        }
       }
       
     } else {
