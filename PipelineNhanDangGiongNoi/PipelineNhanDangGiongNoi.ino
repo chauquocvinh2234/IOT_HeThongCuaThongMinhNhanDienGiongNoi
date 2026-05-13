@@ -7,9 +7,17 @@
 #include <WiFiClientSecure.h>
 #include "esp_heap_caps.h"
 #include "secrets.h"
+#include <U8g2lib.h>
+#include <Wire.h>
+#include <ArduinoJson.h>
 // -------------------------------------------------------------------------
 
 // -------------------------------------------------------------------------
+// Khởi tạo màn hình OLED 1.3" (SH1106) sử dụng I2C phần cứng trên chân 8 và 9
+U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE, /* SCL=*/ 9, /* SDA=*/ 8);
+
+int currentDisplayState = -1; // Biến trạng thái để chống giật/nháy màn hình
+
 // Declare the configuration of Servo
 #define SERVO_PIN 13
 Servo doorServo;
@@ -49,10 +57,17 @@ void recordAndSendAudio();
 float getDistance();
 void controlSystemLogic(float distance, int distance_threshold);
 void generateWavHeader(uint8_t* wav_header, uint32_t wav_size, uint32_t sample_rate);
+void updateDisplay(int state, String extra = "");
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
+
+  // Khởi tạo I2C và Màn hình OLED
+  Wire.begin(8, 9); // SDA = 8, SCL = 9
+  u8g2.begin();
+  u8g2.enableUTF8Print(); // Kích hoạt in Tiếng Việt
+  updateDisplay(0); // Hiển thị "Hệ thống khóa" ban đầu
 
   // Connect to WiFi
   WiFi.begin(ssid, password);
@@ -94,22 +109,21 @@ void loop() {
 
 void controlSystemLogic(float distance, int distance_threshold){
   if (distance > 0 && distance < distance_threshold){
-    // Người vào tầm ngắm, chuyển sang chế độ CHỜ (Bật đèn Xanh)
     digitalWrite(Y_LED_PIN, LOW);
     digitalWrite(G_LED_PIN, HIGH);
     
+    updateDisplay(1); // Màn hình: "Phát hiện người! Nhấn giữ để nói"
+    
     if (digitalRead(BUTTON_PIN) == HIGH) {
       Serial.println("[@] Nút được bấm! Bắt đầu quá trình thu âm...");
-      recordAndSendAudio(); // Bắt đầu ghi âm
-      
-      // Delay để tránh việc vô tình ấn nháy nút nhiều lần liên tục
-      delay(1000); 
+      recordAndSendAudio(); 
+      delay(1000);
     }
-
   } else{
     digitalWrite(Y_LED_PIN, HIGH);
     digitalWrite(G_LED_PIN, LOW);
     digitalWrite(R_LED_PIN, LOW);
+    updateDisplay(0); // Màn hình: "Hệ thống khóa"
   }
 }
 
@@ -210,117 +224,135 @@ void recordAndSendAudio() {
   // Data write pointer, starting at byte position 44
   uint8_t *dataPtr = audioBuffer + 44; 
 
-Serial.println("[@] Hãy giữ nút để nói (Tối đa 5 giây)...");
+  Serial.println("[@] Hãy giữ nút để nói (Tối đa 5 giây)...");
   
   // Bật đèn R1_LED báo hiệu đang thu âm
   digitalWrite(R_LED_PIN, HIGH);
 
-// 3. Recording directly to RAM (Vòng lặp thu âm linh hoạt)
-  // SỬA LOW THÀNH HIGH: Vòng lặp chạy chừng nào nút VẪN ĐANG BẤM (HIGH) VÀ chưa quá 5 giây
+  uint32_t startTime = millis();
+  uint32_t lastElapsed = 255;
+
   while (digitalRead(BUTTON_PIN) == HIGH && bytesRead < wavDataSize) {
+    // Tính số giây đã trôi qua để update OLED
+    uint32_t elapsed = (millis() - startTime) / 1000;
+    if (elapsed != lastElapsed) { // Chỉ render màn hình khi giây thay đổi để không gây giật lag Audio
+      updateDisplay(2, String(elapsed));
+      lastElapsed = elapsed;
+    }
+
     esp_err_t result = i2s_read(I2S_PORT, &sample, sizeof(sample), &bytesIn, portMAX_DELAY);
     if (result == ESP_OK && bytesIn > 0) {
       int16_t audio_sample = sample >> 14;
-      // Copy 2 byte of audio_sample to buffer
       memcpy(dataPtr, &audio_sample, 2);
       dataPtr += 2;
       bytesRead += 2;
     }
   }
 
-  // Tắt đèn R1_LED báo hiệu kết thúc thu âm khi nhả nút
   digitalWrite(R_LED_PIN, LOW);
-  
-  Serial.println("[@] Đã nhả nút. Kết thúc thu âm! Đang kết nối API server...");
+  updateDisplay(3); // Màn hình: "Đang xử lý AI..."
 
-  // BƯỚC QUAN TRỌNG: Tạo lại Header cho file WAV với kích thước THỰC TẾ vừa thu được
   generateWavHeader(audioBuffer, bytesRead, SAMPLE_RATE);
-  
-  // Tính lại tổng dung lượng thực tế để gửi đi (Data thực tế + 44 bytes header)
   uint32_t actualTotalSizeToSend = bytesRead + 44;
 
-  // 4. Send all files in RAM via the API
   if(WiFi.status() == WL_CONNECTED){
-    
-    // --- BẮT ĐẦU ĐOẠN CẦN SỬA ---
     WiFiClientSecure client;
-    client.setInsecure(); // Lệnh cực kỳ quan trọng để bỏ qua bước xác minh chứng chỉ SSL của Ngrok
-    
+    client.setInsecure(); 
     HTTPClient http;
     http.begin(client, serverName);
-    // --- KẾT THÚC ĐOẠN CẦN SỬA ---
-
-    http.setTimeout(10000);
-    // Declare the type of send data as a WAV file
+    http.setTimeout(20000); // Tăng timeout lên 20s
     http.addHeader("Content-Type", "audio/wav");
     
-    // ĐẨY FILE ĐI VỚI DUNG LƯỢNG THỰC TẾ (Thay vì totalSize cứng 5 giây như cũ)
     int httpResponseCode = http.POST(audioBuffer, actualTotalSizeToSend);
-    
     if(httpResponseCode > 0){
-      Serial.print("[@] Server response (Code ");
-      Serial.print(httpResponseCode);
-      Serial.println("):");
-      
-      // Get and print out the result that server returns (ACCEPTED or REJECTED)
       String response = http.getString();
       Serial.println(response);
       
-      if(response.indexOf("ACCEPTED") > 0) {
-        Serial.println("[@] Welcome home! The door is opening in 5 seconds.");
-        
-        // --- ĐOẠN THÊM MỚI BẮT ĐẦU ---
-        // Nháy đèn xanh G1 và bíp còi 2 lần ngắn báo hiệu mở khóa thành công
-        for(int i = 0; i < 2; i++) {
-          digitalWrite(BUZZER_PIN, HIGH);
-          digitalWrite(G1_LED_PIN, HIGH);
-          delay(100); // Kêu ngắn để phân biệt với báo động
-          digitalWrite(BUZZER_PIN, LOW);
-          digitalWrite(G1_LED_PIN, LOW);
-          delay(100);
-        }
-        
-        // Bật giữ đèn G1 sáng trong suốt 5 giây cửa mở
-        digitalWrite(G1_LED_PIN, HIGH);
-        // --- ĐOẠN THÊM MỚI KẾT THÚC ---
+      // BÓC TÁCH JSON ĐỂ LẤY TÊN NGƯỜI DÙNG
+      DynamicJsonDocument doc(1024);
+      DeserializationError error = deserializeJson(doc, response);
+      
+      if (!error) {
+        String message = doc["message"]; // Lấy trường "message"
+        String matched_user = doc["matched_user"]; // Lấy trường "matched_user"
 
-        // Mở cửa
-        doorServo.write(90);
-        
-        // Chờ 5 giây
-        delay(5000); 
-        
-        Serial.println("[@] The door is autonomously closed.");
-        
-        // Đóng cửa
-        doorServo.write(0);
-        
-        // Tắt đèn xanh G1 sau khi cửa đã đóng
-        digitalWrite(G1_LED_PIN, LOW);
-        
-      } else {
-        Serial.println("[@] You're not the person who lives in this house.");
-        
-        // Kích hoạt cảnh báo: Hú còi và chớp đèn đỏ 5 lần
-        for(int i = 0; i < 5; i++) {
-          digitalWrite(BUZZER_PIN, HIGH);  // Bật còi
-          digitalWrite(R1_LED_PIN, HIGH);   // Bật đèn đỏ
-          delay(150);
-          digitalWrite(BUZZER_PIN, LOW);   // Tắt còi
-          digitalWrite(R1_LED_PIN, LOW);    // Tắt đèn đỏ
-          delay(150);
+        if(message == "ACCEPTED") {
+          // HIỂN THỊ CHÀO MỪNG LÊN OLED
+          updateDisplay(4, "Chào " + matched_user + "!");
+          
+          for(int i = 0; i < 2; i++) {
+            digitalWrite(BUZZER_PIN, HIGH);
+            digitalWrite(G1_LED_PIN, HIGH);
+            delay(100); 
+            digitalWrite(BUZZER_PIN, LOW);
+            digitalWrite(G1_LED_PIN, LOW);
+            delay(100);
+          }
+          digitalWrite(G1_LED_PIN, HIGH);
+          doorServo.write(90);
+          delay(5000); 
+          doorServo.write(0);
+          digitalWrite(G1_LED_PIN, LOW);
+          
+        } else {
+          // HIỂN THỊ CẢNH BÁO LÊN OLED
+          updateDisplay(4, "CẢNH BÁO! Kẻ lạ");
+          
+          for(int i = 0; i < 5; i++) {
+            digitalWrite(BUZZER_PIN, HIGH);
+            digitalWrite(R1_LED_PIN, HIGH);
+            delay(150);
+            digitalWrite(BUZZER_PIN, LOW);
+            digitalWrite(R1_LED_PIN, LOW);
+            delay(150);
+          }
         }
       }
-      
     } else {
-      Serial.print("[!] Error: HTTP POST ");
-      Serial.println(httpResponseCode);
+      updateDisplay(4, "Lỗi mạng: " + String(httpResponseCode));
+      delay(3000);
     }
     http.end();
-  } else {
-    Serial.println("[!] Error: Lost Wifi connection.");
   }
-
-  // 5. Notice: Free up memory after sending to prevent RAM overflow
   free(audioBuffer);
+}
+
+void updateDisplay(int state, String extra) {
+  // Tránh việc vẽ lại màn hình liên tục nếu trạng thái không đổi (trừ khi đang đếm giây)
+  if (currentDisplayState == state && state != 2) return;
+  currentDisplayState = state;
+
+  u8g2.clearBuffer();
+  u8g2.setFont(u8g2_font_unifont_t_vietnamese1); // Font hỗ trợ Tiếng Việt
+  
+  if (state == 0) {
+    u8g2.drawUTF8(15, 35, "Hệ thống khóa");
+  } else if (state == 1) {
+    u8g2.drawUTF8(5, 25, "Phát hiện người!");
+    u8g2.drawUTF8(5, 45, "Nhấn giữ để nói");
+  } else if (state == 2) {
+    u8g2.drawUTF8(10, 25, "Đang thu âm...");
+    u8g2.setCursor(50, 50);
+    u8g2.print(extra); 
+    u8g2.print(" s");
+  } else if (state == 3) {
+    u8g2.drawUTF8(15, 35, "Đang xử lý AI...");
+  } else if (state == 4) {
+    // TỰ ĐỘNG CHIA DÒNG NẾU LÀ LỜI CHÀO
+    if (extra.indexOf("Chào") >= 0) {
+      u8g2.drawUTF8(0, 25, "Chào mừng:");
+      
+      // Lấy phần tên phía sau chữ "Chào "
+      int spacePos = extra.indexOf(" ");
+      String name = extra.substring(spacePos + 1);
+      
+      u8g2.setCursor(0, 50);
+      u8g2.print(name); // In tên ở dòng dưới (tọa độ y=50)
+    } else {
+      // Các thông báo ngắn khác (như Cảnh báo) thì giữ nguyên dòng giữa
+      u8g2.setCursor(0, 35);
+      u8g2.print(extra); 
+    }
+  }
+  u8g2.sendBuffer();
 }
