@@ -29,7 +29,7 @@ export default function HistoryScreen() {
   const [history, setHistory] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  
+
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilter, setDateFilter] = useState('all'); // 'all', 'today', 'week', 'month'
@@ -41,7 +41,7 @@ export default function HistoryScreen() {
 
   const fetchHistory = async () => {
     try {
-      const response = await fetch('http://192.168.1.4:5000/history');
+      const response = await fetch('https://broken-unrigged-scolding.ngrok-free.dev/history');
       const result = await response.json();
       if (response.ok && result.status === 'success') {
         setHistory(result.history || []);
@@ -70,7 +70,7 @@ export default function HistoryScreen() {
     // 1. Search by name
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(item => 
+      filtered = filtered.filter(item =>
         item.fullname.toLowerCase().includes(query)
       );
     }
@@ -86,7 +86,7 @@ export default function HistoryScreen() {
       filtered = filtered.filter(item => {
         // Parse time string "YYYY-MM-DD HH:MM:SS" to Date object
         const itemDate = new Date(item.time.replace(' ', 'T'));
-        
+
         if (dateFilter === 'today') {
           return itemDate.toDateString() === now.toDateString();
         } else if (dateFilter === 'week') {
@@ -128,8 +128,8 @@ export default function HistoryScreen() {
               onPress={() => setDateFilter(filter)}
               className={`mr-2 px-4 py-2 rounded-full border flex-row items-center justify-center ${isActive ? 'bg-primary/20 border-primary' : 'bg-card border-border'}`}
             >
-              <Text 
-                numberOfLines={1} 
+              <Text
+                numberOfLines={1}
                 className={isActive ? 'text-primary font-bold text-xs' : 'text-textSecondary text-xs'}
               >
                 {labels[filter]}
@@ -166,23 +166,23 @@ export default function HistoryScreen() {
 
   const renderHistoryItem = ({ item }) => {
     const isAccepted = item.status === 'ACCEPTED';
-    
+
     // Tách ngày và giờ để hiển thị đẹp hơn
     const [datePart, timePart] = item.time.split(' ');
 
     return (
       <View className="bg-card p-4 rounded-[16px] mb-3 border border-border flex-row items-center">
-        <View 
+        <View
           className="w-12 h-12 rounded-xl justify-center items-center mr-4"
           style={{ backgroundColor: isAccepted ? COLORS.success + '15' : COLORS.danger + '15' }}
         >
-          <Ionicons 
-            name={isAccepted ? "checkmark-circle" : "close-circle"} 
-            size={24} 
-            color={isAccepted ? COLORS.success : COLORS.danger} 
+          <Ionicons
+            name={isAccepted ? "checkmark-circle" : "close-circle"}
+            size={24}
+            color={isAccepted ? COLORS.success : COLORS.danger}
           />
         </View>
-        
+
         <View className="flex-1">
           <Text className="text-base font-bold text-text mb-0.5" numberOfLines={1}>
             {item.fullname}
@@ -192,7 +192,7 @@ export default function HistoryScreen() {
             <Text className="text-xs text-textSecondary ml-1">{timePart} • {datePart}</Text>
           </View>
         </View>
-        
+
         <View className={`px-2.5 py-1 rounded-md ${isAccepted ? 'bg-success/20' : 'bg-danger/20'}`} style={{ backgroundColor: isAccepted ? COLORS.success + '20' : COLORS.danger + '20' }}>
           <Text className="text-[10px] font-bold uppercase" style={{ color: isAccepted ? COLORS.success : COLORS.danger }}>
             {isAccepted ? 'MỞ CỬA' : 'TỪ CHỐI'}
@@ -206,7 +206,7 @@ export default function HistoryScreen() {
     <SafeAreaView className="flex-1 bg-background">
       <View className="px-5 pt-4 pb-2">
         <Text className="text-[26px] font-bold text-text tracking-wide mb-4">Lịch sử</Text>
-        
+
         {/* Search Bar */}
         <View className="flex-row items-center bg-card border border-border rounded-2xl px-4 h-12 mb-4">
           <Ionicons name="search-outline" size={20} color={COLORS.textSecondary} />
@@ -267,19 +267,19 @@ export default function HistoryScreen() {
             {/* Pagination Controls */}
             {totalPages > 1 && (
               <View className="flex-row justify-between items-center pt-3 pb-5 border-t border-border mt-2">
-                <TouchableOpacity 
+                <TouchableOpacity
                   onPress={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                   disabled={currentPage === 1}
                   className={`px-4 py-2.5 rounded-xl justify-center items-center ${currentPage === 1 ? 'opacity-40 bg-card border border-border' : 'bg-card border border-border'}`}
                 >
                   <Text className="text-text font-semibold text-sm">Trước</Text>
                 </TouchableOpacity>
-                
+
                 <Text className="text-textSecondary text-sm font-semibold">
                   Trang <Text className="text-primary">{currentPage}</Text> / {totalPages}
                 </Text>
 
-                <TouchableOpacity 
+                <TouchableOpacity
                   onPress={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                   disabled={currentPage === totalPages}
                   className={`px-4 py-2.5 rounded-xl justify-center items-center ${currentPage === totalPages ? 'opacity-40 bg-card border border-border' : 'bg-primary'}`}

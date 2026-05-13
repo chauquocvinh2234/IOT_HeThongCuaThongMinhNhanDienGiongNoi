@@ -183,7 +183,7 @@ export default function RegisterScreen({ navigation }) {
       console.log('[Register] Đang gửi dữ liệu tới server...');
       console.log(`  -> File: ${fileName} (${mimeType})`);
 
-      const response = await fetch('http://192.168.1.4:5000/register', {
+      const response = await fetch('https://broken-unrigged-scolding.ngrok-free.dev/register', {
         method: 'POST',
         headers: {
           'Content-Type': 'multipart/form-data',

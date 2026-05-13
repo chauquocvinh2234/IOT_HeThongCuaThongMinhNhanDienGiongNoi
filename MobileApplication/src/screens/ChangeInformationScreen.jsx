@@ -128,7 +128,7 @@ export default function ChangeInformationScreen({ navigation }) {
     try {
       const formData = new FormData();
       formData.append('user_id', user.user_id);
-      
+
       if (fullName !== user.fullname) {
         formData.append('fullname', fullName);
       }
@@ -145,7 +145,7 @@ export default function ChangeInformationScreen({ navigation }) {
         });
       }
 
-      const response = await fetch('http://192.168.1.4:5000/changeInformation', {
+      const response = await fetch('https://broken-unrigged-scolding.ngrok-free.dev/changeInformation', {
         method: 'POST',
         headers: {
           'Content-Type': 'multipart/form-data',
@@ -190,7 +190,7 @@ export default function ChangeInformationScreen({ navigation }) {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 24 }}>
-          
+
           <View className="flex-row items-center mb-8">
             <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
               <Ionicons name="arrow-back" size={28} color="#FFFFFF" />

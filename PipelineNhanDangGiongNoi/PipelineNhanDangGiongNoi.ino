@@ -37,7 +37,7 @@ const char* ssid = "vinhplaykennen";
 const char* password = "Chauvinh22032004@Aa";
 
 // Declare IP of the server that's running
-const char* serverName = "http://192.168.137.1:5000/verify";
+const char* serverName = "https://broken-unrigged-scolding.ngrok-free.dev/verify";
 // -------------------------------------------------------------------------
 
 // Declare function prototypes
