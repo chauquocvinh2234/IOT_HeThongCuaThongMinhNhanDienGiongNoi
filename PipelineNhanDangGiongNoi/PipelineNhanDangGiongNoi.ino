@@ -10,6 +10,7 @@
 #include <U8g2lib.h>
 #include <Wire.h>
 #include <ArduinoJson.h>
+#include <WiFiManager.h>
 // -------------------------------------------------------------------------
 
 // -------------------------------------------------------------------------
@@ -59,6 +60,14 @@ void controlSystemLogic(float distance, int distance_threshold);
 void generateWavHeader(uint8_t* wav_header, uint32_t wav_size, uint32_t sample_rate);
 void updateDisplay(int state, String extra = "");
 
+void configModeCallback (WiFiManager *myWiFiManager) {
+  Serial.println("[@] Đã vào chế độ Cài đặt WiFi");
+  Serial.println(WiFi.softAPIP());
+  
+  // Hiển thị lên OLED tên WiFi cần kết nối
+  updateDisplay(4, "Cài WiFi: " + myWiFiManager->getConfigPortalSSID());
+}
+
 void setup() {
   Serial.begin(115200);
   delay(1000);
@@ -67,17 +76,37 @@ void setup() {
   Wire.begin(8, 9); // SDA = 8, SCL = 9
   u8g2.begin();
   u8g2.enableUTF8Print(); // Kích hoạt in Tiếng Việt
-  updateDisplay(0); // Hiển thị "Hệ thống khóa" ban đầu
 
-  // Connect to WiFi
-  WiFi.begin(ssid, password);
-  Serial.print("[@] Connecting to WiFi");
-  while(WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
+  updateDisplay(4, "Đang kết nối WiFi...");
+
+  WiFiManager wifiManager;
+
+  // Đăng ký hàm callback để update màn hình OLED khi rớt mạng
+  wifiManager.setAPCallback(configModeCallback);
+
+  // Thiết lập thời gian chờ cho cổng cài đặt (ví dụ: 180 giây)
+  // Nếu sau 3 phút không ai cấu hình, ESP32 sẽ reset để thử lại
+  wifiManager.setConnectTimeout(10);
+  wifiManager.setConfigPortalTimeout(180);
+
+  // Khởi chạy WiFiManager. 
+  // "SmartDoor_Setup" là tên WiFi do ESP32 phát ra nếu không có mạng.
+  // Hàm này sẽ block chương trình cho đến khi kết nối thành công hoặc timeout.
+  if (!wifiManager.autoConnect("SmartDoor_Setup")) {
+    Serial.println("[!] Kết nối thất bại và hết thời gian chờ");
+    updateDisplay(4, "Lỗi WiFi! Đang thử lại...");
+    delay(3000);
+    ESP.restart(); // Khởi động lại mạch
   }
+
+  // Nếu code chạy xuống được đến đây nghĩa là đã kết nối thành công
   Serial.println("\n[@] WiFi Connected! IP: ");
   Serial.println(WiFi.localIP());
+  
+  updateDisplay(4, "WiFi OK!");
+  delay(1500);
+  updateDisplay(0); // Hiển thị "Hệ thống khóa" ban đầu [cite: 6]
+  // ===============================================
 
   // Configure pin mode for devices
   pinMode(TRIG_PIN, OUTPUT);
@@ -341,15 +370,25 @@ void updateDisplay(int state, String extra) {
     // TỰ ĐỘNG CHIA DÒNG NẾU LÀ LỜI CHÀO
     if (extra.indexOf("Chào") >= 0) {
       u8g2.drawUTF8(0, 25, "Chào mừng:");
-      
       // Lấy phần tên phía sau chữ "Chào "
       int spacePos = extra.indexOf(" ");
       String name = extra.substring(spacePos + 1);
       
       u8g2.setCursor(0, 50);
       u8g2.print(name); // In tên ở dòng dưới (tọa độ y=50)
-    } else {
-      // Các thông báo ngắn khác (như Cảnh báo) thì giữ nguyên dòng giữa
+    } 
+    // TỰ ĐỘNG CHIA DÒNG KHI ĐANG KẾT NỐI WIFI
+    else if (extra == "Đang kết nối WiFi...") {
+      u8g2.drawUTF8(10, 25, "Đang kết nối");
+      u8g2.drawUTF8(35, 50, "WiFi..."); // Đẩy chữ WiFi ra giữa màn hình
+    }
+    // TỰ ĐỘNG CHIA DÒNG KHI LỖI WIFI
+    else if (extra == "Lỗi WiFi! Đang thử lại...") {
+      u8g2.drawUTF8(20, 25, "Lỗi WiFi!");
+      u8g2.drawUTF8(5, 50, "Đang thử lại...");
+    }
+    else {
+      // Các thông báo ngắn khác (như Cảnh báo hoặc WiFi OK) thì giữ nguyên dòng giữa
       u8g2.setCursor(0, 35);
       u8g2.print(extra); 
     }
