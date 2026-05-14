@@ -90,7 +90,7 @@ export default function DashboardScreen() {
             {'\n'}quay trở lại!
           </Text>
           <Text className="text-sm text-textSecondary text-center mt-2 leading-5">
-            Hệ thống Nhà thông minh đang hoạt động bình thường
+            Hệ thống Cửa nhà Thông minh đang hoạt động bình thường
           </Text>
         </Animated.View>
 

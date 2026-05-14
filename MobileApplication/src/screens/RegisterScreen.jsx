@@ -99,7 +99,6 @@ export default function RegisterScreen({ navigation }) {
     if (isPlaying) {
       player.pause();
     } else {
-      // Seek to 0 if we reached the end
       if (playerStatus.currentTime >= playerStatus.duration && playerStatus.duration > 0) {
         player.seekTo(0);
       }
@@ -202,7 +201,7 @@ export default function RegisterScreen({ navigation }) {
         });
 
         Alert.alert(
-          'Đăng ký thành công! ✅',
+          'Đăng ký thành công!',
           result.message || `Chào mừng ${fullName}!`,
           [
             {
@@ -329,8 +328,8 @@ export default function RegisterScreen({ navigation }) {
 
           {/* Voice Recording Section */}
           <View className="mb-8 p-4 bg-card rounded-2xl border border-border">
-            <Text className="text-base font-bold text-text mb-1">Ghi âm giọng nói (Bắt buộc)</Text>
-            <Text className="text-xs text-textSecondary mb-4">Định dạng 16kHz, 1 mono (.wav trên iOS/Web)</Text>
+            <Text className="text-base font-bold text-text mb-1">Ghi âm giọng nói</Text>
+            <Text className="text-xs text-textSecondary mb-4">Định dạng 16kHz, 1 mono</Text>
 
             <View className="flex-row items-center justify-between">
               <TouchableOpacity

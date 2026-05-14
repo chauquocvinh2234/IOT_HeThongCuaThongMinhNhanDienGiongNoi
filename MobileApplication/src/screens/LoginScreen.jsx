@@ -74,7 +74,7 @@ export default function LoginScreen({ navigation }) {
             </View>
             <Text className="text-3xl font-bold text-text mb-2">Đăng nhập</Text>
             <Text className="text-sm text-textSecondary text-center">
-              Chào mừng bạn trở lại với hệ thống Nhà thông minh
+              Chào mừng bạn trở lại với Hệ thống Cửa nhà thông minh
             </Text>
           </View>
 
