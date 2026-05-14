@@ -1,5 +1,5 @@
 // -------------------------------------------------------------------------
-// Declare essential library for coding
+// Khai báo các thư viện cần thiết
 #include <driver/i2s.h>
 #include <ESP32Servo.h>
 #include <WiFi.h>
@@ -19,40 +19,38 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE, /* S
 
 int currentDisplayState = -1; // Biến trạng thái để chống giật/nháy màn hình
 
-// Declare the configuration of Servo
+// Khai báo chân cho Servo và thư viện điều khiển Servo
 #define SERVO_PIN 13
 Servo doorServo;
 
-// Declare the configuration for HC-SR04
+// Khai báo chân cho HC-SR04 và các đèn LED để tương tác với HC-SR04
 #define TRIG_PIN 41 
 #define ECHO_PIN 42 
 #define DISTANCE_THRESHOLD 10
 #define Y_LED_PIN 47 
 #define G_LED_PIN 48 
 
-// Declare the configuration for Button
+// Khai báo chân cho nút và đèn LED để tương tác với nút
 #define R_LED_PIN 17 
 #define BUTTON_PIN 18 
 
-// Declare the configuration for Buzzer
+// Khai báo chân cho Buzzer và đèn LED để tương tác với Buzzer
 #define BUZZER_PIN 5
 #define G1_LED_PIN 6
 #define R1_LED_PIN 4
 
-// Declare the configuration for INMP441 
+// Khai báo chân cho INMP441 và thiết lập thông số cho việc ghi âm giọng nói
 #define I2S_WS_PIN 10 
 #define I2S_SCK_PIN 11 
 #define I2S_SD_PIN 12 
 #define I2S_PORT I2S_NUM_0
 #define SAMPLE_RATE 16000
-
-// Declare the configuration for recording
 #define RECORD_TIME_SEC 5
 const uint32_t wavDataSize = RECORD_TIME_SEC * SAMPLE_RATE * 2;
 
 // -------------------------------------------------------------------------
 
-// Declare function prototypes
+// Khai báo nguyên mẫu hàm
 void initMicrophone();
 void recordAndSendAudio();
 float getDistance();
@@ -62,10 +60,13 @@ void updateDisplay(int state, String extra = "");
 
 void configModeCallback (WiFiManager *myWiFiManager) {
   Serial.println("[@] Đã vào chế độ Cài đặt WiFi");
-  Serial.println(WiFi.softAPIP());
+  Serial.println(WiFi.softAPIP()); // In ra Local IP của mạch ESP32
   
   // Hiển thị lên OLED tên WiFi cần kết nối
   updateDisplay(4, "Cài WiFi: " + myWiFiManager->getConfigPortalSSID());
+  /*
+      - myWiFiManager->getConfigPortalSSID(): Trích xuất tên WiFi mà mạch đang phát ra.
+  */
 }
 
 void setup() {
@@ -84,9 +85,14 @@ void setup() {
   // Đăng ký hàm callback để update màn hình OLED khi rớt mạng
   wifiManager.setAPCallback(configModeCallback);
 
-  // Thiết lập thời gian chờ cho cổng cài đặt (ví dụ: 180 giây)
-  // Nếu sau 3 phút không ai cấu hình, ESP32 sẽ reset để thử lại
+  // Thiết lập thời gian chờ cho mạch ESP32 kết nối lại thiết lập WiFi cũ
+  // Nếu sau 10 giây không kết nối WiFi được thì ESP32 sẽ chuyển sang chế độ phát WiFi cấu hình
+  // Người dùng có thể truy cập vào IP Local của WiFi được mạch phát ra để cấu hình mạng mới
   wifiManager.setConnectTimeout(10);
+  /*
+      - Thiết lập thời gian chờ cho cổng cài đặt là 3 phút
+      - Nếu sau 3 phút không ai cấu hình, ESP32 sẽ reset để thử lại việc kết nối WiFi
+  */
   wifiManager.setConfigPortalTimeout(180);
 
   // Khởi chạy WiFiManager. 
@@ -99,16 +105,16 @@ void setup() {
     ESP.restart(); // Khởi động lại mạch
   }
 
-  // Nếu code chạy xuống được đến đây nghĩa là đã kết nối thành công
-  Serial.println("\n[@] WiFi Connected! IP: ");
+  // Nếu mạch ESP32 kết nối mạng thành công thì sẽ hiển thị dòng này
+  Serial.println("\n[@] Kết nối WiFi thành công, địa chỉ IP: ");
   Serial.println(WiFi.localIP());
   
   updateDisplay(4, "WiFi OK!");
   delay(1500);
-  updateDisplay(0); // Hiển thị "Hệ thống khóa" ban đầu [cite: 6]
+  updateDisplay(0);
   // ===============================================
 
-  // Configure pin mode for devices
+  // Thiết lập chân đầu ra cho các thiết bị được kết nối
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
   pinMode(Y_LED_PIN, OUTPUT);
@@ -119,29 +125,44 @@ void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT);
 
-  // Initialize Servo
+  // Khởi tạo Servo
   doorServo.attach(SERVO_PIN);
-  doorServo.write(0); //Angle 0: Door locked
+  doorServo.write(0); // Góc bằng 0 <=> Cửa đang khóa
 
-  // Initialize INMP441
+  // Khởi tạo INMP441
   initMicrophone();
 }
 
 void loop() {
-  // Get distance from HC-SR04
+  // Lấy khoảng cách được trả về từ HC-SR04
   float distance = getDistance();
-  // Controlling the LED logics based on the returned distance
+  // Điều khiển logic của hệ thống dựa trên khoảng cách được trả về
   controlSystemLogic(distance, DISTANCE_THRESHOLD);
 
   delay(100);
 }
 
+// Hàm xử lý chức năng của toàn bộ hệ thống
 void controlSystemLogic(float distance, int distance_threshold){
-  if (distance > 0 && distance < distance_threshold){
+  /*
+    - Dưới đây là mô tả luồng xử lý cho toàn bộ hệ thống:
+      + Nếu khoảng cách trả về thuộc [0, 10] cm:
+        * Hệ thống sẽ sáng đèn màu xanh lá (G_LED_PIN), tắt đèn màu vàng (Y_LED_PIN) và màn hình OLED sẽ hiển thị là "Phát hiện người! Nhấn giữ nút để nói"
+        * Người dùng nhấn giữ nút và nói vào mic (INMP441), khi người dùng thả nút ra thì đoạn giọng nói sẽ được lưu lại và gửi lên máy chủ để xử lý. Sau đó
+          hệ thống dừng 1 giây để ổn định và tiếp tục lặp lại luồng xử lý của hệ thống.  
+      + Nếu khoảng cách trả về thuộc [10.01, maxValue_Of_HC-SR04]:
+        * Hệ thống sẽ sáng đèn màu vàng (Y_LED_PIN), tắt đèn màu xanh lá (G_LED_PIN) và sẽ hiển thị lên màn hình OLED
+          là "Hệ thống khóa"
+
+    - Giải thích:
+      + updateDisplay(0): Màn hình OLED sẽ hiển thị "Hệ thống khóa"
+      + updateDisplay(1): Màn hình OLED sẽ hiển thị "Phát hiện người! Nhấn giữ nút để nói"
+  */
+  if (distance > 0 && distance <= distance_threshold){
     digitalWrite(Y_LED_PIN, LOW);
     digitalWrite(G_LED_PIN, HIGH);
     
-    updateDisplay(1); // Màn hình: "Phát hiện người! Nhấn giữ để nói"
+    updateDisplay(1);
     
     if (digitalRead(BUTTON_PIN) == HIGH) {
       Serial.println("[@] Nút được bấm! Bắt đầu quá trình thu âm...");
@@ -152,38 +173,51 @@ void controlSystemLogic(float distance, int distance_threshold){
     digitalWrite(Y_LED_PIN, HIGH);
     digitalWrite(G_LED_PIN, LOW);
     digitalWrite(R_LED_PIN, LOW);
-    updateDisplay(0); // Màn hình: "Hệ thống khóa"
+    updateDisplay(0);
   }
 }
 
-// The function to get distance from HC-SR04
+// Hàm để lấy khoảng cách được trả về của HC-SR04
 float getDistance(){
+  /*
+    - Luồng xử lý của chức năng này như sau:
+      1. Phát sóng (Trigger): Kéo chân TRIG lên mức HIGH trong đúng 10 micro-giây (µs) để kích hoạt module phát ra sóng siêu âm.
+      2. Nhận sóng (Echo): Dùng hàm pulseIn() để đo thời gian chân ECHO duy trì ở mức HIGH. Đây chính là tổng thời gian sóng âm bay đi và dội lại khi gặp vật cản.
+      3. Tính toán: Khoảng cách = (Thời gian * Vận tốc âm thanh) / 2.
+         (Vận tốc âm thanh ~ 340m/s, tương đương 0.034 cm/µs. Chia 2 vì sóng phải đi cả 2 chiều: từ cảm biến đến vật cản rồi dội ngược lại).
+      4. Trả kết quả: In ra cổng Serial để theo dõi và trả về giá trị khoảng cách (cm).
+  */
+
   long duration;
   float distance;
-  // 1. Sending ultrasonic signal (with HIGH signal in 10 microseconds)
+
   digitalWrite(TRIG_PIN, LOW);
   delayMicroseconds(2);
   digitalWrite(TRIG_PIN, HIGH);
   delayMicroseconds(10);
   digitalWrite(TRIG_PIN, LOW);
 
-  // 2. Read the response time of the ECHO pin
   duration = pulseIn(ECHO_PIN, HIGH);
 
-  // 3. Calculate the distance (Speed of sound ~ 340m/s --> 0.034cm/microsecond)
-  // Divide by 2 because the sound waves must travel to the obstacle and then bounce back
   distance = duration * 0.034/2;
 
-  // 4. Print out the result to the serial screen
-  Serial.print("Distance: ");
+  Serial.print("Khoảng cách: ");
   Serial.print(distance);
   Serial.println(" cm");
 
   return distance;
 }
 
-// The function to initialize INMP441
+// Hàm khởi tạo của thiết bị INMP441
 void initMicrophone() {
+  /*
+    - Luồng xử lý của chức năng này như sau:
+      1. Cấu hình thông số I2S (i2s_config): Thiết lập ESP32 làm thiết bị chủ (Master) để nhận dữ liệu (RX). 
+         Chỉ định các thông số thu âm như: tần số lấy mẫu (Sample Rate), độ phân giải (32-bit), kênh âm thanh (trái/mono) 
+         và thiết lập bộ nhớ đệm DMA để xử lý luồng âm thanh liên tục mà không làm nghẽn CPU.
+      2. Cấu hình phần cứng (pin_config): Ánh xạ các chân GPIO của mạch ESP32 tương ứng với các chân giao tiếp của micro INMP441 (SCK/BCLK, WS/LRC, SD/Data).
+      3. Khởi chạy: Nạp các cấu hình trên vào driver I2S, áp dụng phần cứng và bật I2S lên để sẵn sàng thu âm giọng nói.
+  */
   const i2s_config_t i2s_config = {
     .mode = i2s_mode_t(I2S_MODE_MASTER | I2S_MODE_RX),
     .sample_rate = SAMPLE_RATE,
@@ -207,10 +241,21 @@ void initMicrophone() {
   i2s_set_pin(I2S_PORT, &pin_config);
   i2s_start(I2S_PORT);
   
-  Serial.println("[@] Microphone INMP441 is ready.");
+  Serial.println("[@] Microphone INMP441 đã sẵn sàng");
 }
 
+
+// Hàm tạo Header chuẩn 44-byte cho file âm thanh định dạng WAV
 void generateWavHeader(uint8_t* wav_header, uint32_t wav_size, uint32_t sample_rate) {
+  /*
+    - Luồng xử lý của chức năng này như sau:
+      1. Mục đích: Dữ liệu âm thanh thô từ INMP441 chỉ là các dải số. Để máy tính hay Backend Python hiểu được đây là file âm thanh, 
+         nó cần 44 byte thông tin "mô tả" ở ngay đầu file.
+      2. Tính toán kích thước: Tính tổng kích thước file và tốc độ truyền byte (byteRate = sample_rate * 2 byte/mẫu cho chuẩn 16-bit Mono).
+      3. Tạo mảng Header: Lắp ghép một mảng đúng 44 byte chứa các cờ nhận diện chuẩn như "RIFF", "WAVE", "fmt ", và "data". 
+         (Lưu ý: Các phép toán dịch bit `>> 8`, `>> 16`, `>> 24` và `& 0xff` có nhiệm vụ cắt một số nguyên lớn 32-bit thành 4 phần nhỏ 8-bit và ghi ngược từ đuôi lên đầu theo chuẩn Little-Endian bắt buộc của file WAV).
+      4. Gắn vào bộ nhớ: Dùng hàm memcpy() để chép chính xác 44 byte vừa tạo này vào phần đầu tiên của bộ nhớ đệm (buffer) chứa file ghi âm.
+  */
   uint32_t fileSize = wav_size + 36;
   uint32_t byteRate = sample_rate * 2;
   const uint8_t setWavHeader[] = {
@@ -229,18 +274,18 @@ void generateWavHeader(uint8_t* wav_header, uint32_t wav_size, uint32_t sample_r
   memcpy(wav_header, setWavHeader, 44);
 }
 
-// The function to record audio
+// Hàm để ghi âm lại giọng nói và gửi đoạn giọng nói đó về máy chủ
 void recordAndSendAudio() {
-  uint32_t totalSize = wavDataSize + 44; // Total size: Audio data + 44 byte header
+  uint32_t totalSize = wavDataSize + 44;
   
-  // 1. Allocate memory from PSRAM to store the file
+  // 1. Cấp bộ nhớ PSRAM để lưu trữ file ghi âm giọng nói
   uint8_t *audioBuffer = (uint8_t *)heap_caps_malloc(totalSize, MALLOC_CAP_SPIRAM);
   if(audioBuffer == NULL) {
-    Serial.println("[!] Error: Not enough memory PSRAM.");
+    Serial.println("[!] LỖI: Không đủ dung lượng bộ nhớ PSRAM.");
     return;
   }
 
-  // 2. Insert a 44-byte header at the beginning of the buffer
+  // 2. Thêm 44 byte header vào đầu của file ghi âm giọng nói
   generateWavHeader(audioBuffer, wavDataSize, SAMPLE_RATE);
 
   i2s_stop(I2S_PORT);
@@ -249,15 +294,14 @@ void recordAndSendAudio() {
   int32_t sample = 0;
   size_t bytesIn = 0;
   uint32_t bytesRead = 0;
-  
-  // Data write pointer, starting at byte position 44
+
+  // Con trỏ ghi dữ liệu, bắt đầu ghi từ vị trí byte thứ 44
   uint8_t *dataPtr = audioBuffer + 44; 
 
   Serial.println("[@] Hãy giữ nút để nói (Tối đa 5 giây)...");
   
-  // Bật đèn R1_LED báo hiệu đang thu âm
+  // 3. Ghi âm giọng nói khi vào đúng tầm của HC-SR04 và nhấn giữ nút
   digitalWrite(R_LED_PIN, HIGH);
-
   uint32_t startTime = millis();
   uint32_t lastElapsed = 255;
 
@@ -277,10 +321,10 @@ void recordAndSendAudio() {
       bytesRead += 2;
     }
   }
-
   digitalWrite(R_LED_PIN, LOW);
-  updateDisplay(3); // Màn hình: "Đang xử lý AI..."
 
+  // 4. Sau khi thu âm xong, xử lý file thu âm được lưu trên bộ nhớ đệm và gửi file đó lên máy chủ để xử lý
+  updateDisplay(3); // Màn hình: "Đang xử lý AI..."
   generateWavHeader(audioBuffer, bytesRead, SAMPLE_RATE);
   uint32_t actualTotalSizeToSend = bytesRead + 44;
 
@@ -297,7 +341,7 @@ void recordAndSendAudio() {
       String response = http.getString();
       Serial.println(response);
       
-      // BÓC TÁCH JSON ĐỂ LẤY TÊN NGƯỜI DÙNG
+      // Bóc tách JSON để lấy tên của người dùng
       DynamicJsonDocument doc(1024);
       DeserializationError error = deserializeJson(doc, response);
       
@@ -306,7 +350,6 @@ void recordAndSendAudio() {
         String matched_user = doc["matched_user"]; // Lấy trường "matched_user"
 
         if(message == "ACCEPTED") {
-          // HIỂN THỊ CHÀO MỪNG LÊN OLED
           updateDisplay(4, "Chào " + matched_user + "!");
           
           for(int i = 0; i < 2; i++) {
@@ -324,7 +367,6 @@ void recordAndSendAudio() {
           digitalWrite(G1_LED_PIN, LOW);
           
         } else {
-          // HIỂN THỊ CẢNH BÁO LÊN OLED
           updateDisplay(4, "CẢNH BÁO! Kẻ lạ");
           
           for(int i = 0; i < 5; i++) {
@@ -358,7 +400,7 @@ void updateDisplay(int state, String extra) {
     u8g2.drawUTF8(15, 35, "Hệ thống khóa");
   } else if (state == 1) {
     u8g2.drawUTF8(5, 25, "Phát hiện người!");
-    u8g2.drawUTF8(5, 45, "Nhấn giữ để nói");
+    u8g2.drawUTF8(5, 45, "Nhấn giữ nút để nói");
   } else if (state == 2) {
     u8g2.drawUTF8(10, 25, "Đang thu âm...");
     u8g2.setCursor(50, 50);
