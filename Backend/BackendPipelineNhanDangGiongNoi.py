@@ -1,4 +1,6 @@
 import os
+import requests
+import threading
 from dotenv import load_dotenv
 
 # Load variables from .env file
@@ -16,6 +18,10 @@ from flasgger import Swagger
 from pyngrok import ngrok
 
 app = Flask(__name__)
+
+# Lấy Token và Chat ID của Bot Telegram
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 # Cấu hình Swagger UI
 swagger_config = {
@@ -70,6 +76,34 @@ print("[+] Đã nạp mô hình thành công!")
 # ==========================================
 # HÀM TIỆN ÍCH (UTILITY FUNCTIONS)
 # ==========================================
+def send_telegram_message_task(text_msg):
+    """Hàm thực thi việc gọi API Telegram (chạy trong luồng riêng)."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("[!] Cảnh báo: Chưa cấu hình TELEGRAM_BOT_TOKEN hoặc TELEGRAM_CHAT_ID trong file .env")
+        return
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": text_msg
+    }
+    
+    try:
+        # Gọi API Telegram với timeout ngắn để an toàn cho luồng
+        response = requests.post(url, json=payload, timeout=5)
+        if response.status_code == 200:
+            print("[Telegram] Đã gửi thông báo thành công.")
+        else:
+            print(f"[Telegram] Lỗi gửi thông báo: {response.text}")
+    except Exception as e:
+        print(f"[Telegram] Lỗi kết nối: {e}")
+
+def notify_telegram(text_msg):
+    """Hàm kích hoạt luồng ngầm để gửi thông báo."""
+    # Tạo một luồng (thread) mới để gửi tin nhắn mà không block luồng chính của Flask
+    thread = threading.Thread(target=send_telegram_message_task, args=(text_msg,))
+    thread.start()
+
 def convert_to_wav_16k_mono(input_path, output_path="converted.wav"):
     """
     Chuyển đổi file âm thanh bất kỳ (m4a, mp3, ogg, webm, ...)
@@ -399,10 +433,11 @@ def verify_voice():
         if is_accepted:
             result_msg = "ACCEPTED"
             print(f" => ✅ KẾT QUẢ: Cho phép {best_match_name} vào nhà! (Điểm: {highest_score:.4f})")
+            notify_telegram(f"✅ Cửa đã được mở thành công bởi: {best_match_name} (Độ tin cậy: {highest_score:.2f})")
         else:
             result_msg = "REJECTED"
             print(f" => ❌ KẾT QUẢ: Từ chối mở cửa. Người lạ! (Điểm gần nhất: {highest_score:.4f})")
-
+            notify_telegram("🚨 CẢNH BÁO: Phát hiện người lạ đang cố gắng mở cửa bằng giọng nói!")
         # Bước 3.1: Lưu lịch sử mở cửa vào MongoDB (cả thành công và thất bại)
         history_record = {
             "user_id": best_match_id if is_accepted else None,
