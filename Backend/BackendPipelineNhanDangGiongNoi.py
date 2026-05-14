@@ -19,10 +19,6 @@ from pyngrok import ngrok
 
 app = Flask(__name__)
 
-# Lấy Token và Chat ID của Bot Telegram
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
-
 # Cấu hình Swagger UI
 swagger_config = {
     "headers": [],
@@ -51,9 +47,16 @@ swagger_template = {
 swagger = Swagger(app, config=swagger_config, template=swagger_template)
 
 # ==========================================
+# CẤU HÌNH BOT GỬI TIN NHẮN CỦA TELEGRAM
+# ==========================================
+# Lấy credentials của Telegram từ .env
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+
+# ==========================================
 # CẤU HÌNH MONGODB ATLAS
 # ==========================================
-# Thay connection string bên dưới bằng connection string thật của bạn
+# Lấy credentials của MongoDB từ file .env
 MONGO_URI = os.environ.get("MONGO_URI")
 DB_NAME = "iot_smart_door"
 
@@ -72,9 +75,8 @@ model = wespeaker.load_model('english')
 model.set_device("cpu")
 print("[+] Đã nạp mô hình thành công!")
 
-
 # ==========================================
-# HÀM TIỆN ÍCH (UTILITY FUNCTIONS)
+# HÀM TIỆN ÍCH
 # ==========================================
 def send_telegram_message_task(text_msg):
     """Hàm thực thi việc gọi API Telegram (chạy trong luồng riêng)."""
@@ -116,9 +118,8 @@ def convert_to_wav_16k_mono(input_path, output_path="converted.wav"):
     audio = audio.set_channels(1)          # Mono
     audio = audio.set_sample_width(2)      # 16-bit (2 bytes)
     audio.export(output_path, format="wav")
-    print(f"  -> ✅ Đã chuyển đổi thành công: {output_path}")
+    print(f"  -> Đã chuyển đổi thành công: {output_path}")
     return output_path
-
 
 def get_embedding(file_path):
     """Trích xuất vector đặc trưng giọng nói từ file âm thanh."""
@@ -129,11 +130,9 @@ def get_embedding(file_path):
         emb = emb.numpy()
     return emb.flatten()
 
-
 def compute_cosine_similarity(v1, v2):
     """Tính độ tương đồng Cosine giữa 2 vector."""
     return np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
-
 
 # ==========================================
 # 1. API ĐĂNG NHẬP - /login
@@ -218,7 +217,6 @@ def login():
         print(f"[!] Lỗi đăng nhập: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
 # ==========================================
 # 2. API ĐĂNG KÝ GIỌNG NÓI - /register
 # ==========================================
@@ -262,7 +260,7 @@ def register_voice():
       500:
         description: Lỗi hệ thống
     """
-    TEMP_RAW_FILE = "temp_register_raw"   # File gốc từ frontend (có thể là .m4a, .wav, ...)
+    TEMP_RAW_FILE = "temp_register_raw"    # File gốc từ frontend (có thể là .m4a, .wav, ...)
     TEMP_WAV_FILE = "temp_register.wav"    # File sau khi convert sang WAV 16kHz mono
 
     # ------- Kiểm tra các trường bắt buộc -------
@@ -322,7 +320,7 @@ def register_voice():
         # Bước 3: Hash mật khẩu để bảo mật
         hashed_password = generate_password_hash(password)
 
-        # Bước 4: Tạo document theo cấu trúc yêu cầu và lưu vào MongoDB
+        # Bước 4: Tạo document theo cấu trúc như bên dưới và lưu vào MongoDB
         user_document = {
             "username": username,
             "password": hashed_password,
@@ -334,7 +332,7 @@ def register_voice():
 
         result = users_collection.insert_one(user_document)
 
-        print(f"  -> ✅ Đã lưu vào MongoDB Atlas! (ID: {result.inserted_id})")
+        print(f"  -> Đã lưu vào MongoDB Atlas! (ID: {result.inserted_id})")
 
         return jsonify({
             "status": "success",
@@ -356,9 +354,8 @@ def register_voice():
             if os.path.exists(f):
                 os.remove(f)
 
-
 # ==========================================
-# 3. API XÁC THỰC GIỌNG NÓI 1:N - /verify
+# 3. API XÁC THỰC GIỌNG NÓI - /verify
 # ==========================================
 @app.route('/verify', methods=['POST'])
 def verify_voice():
@@ -446,7 +443,7 @@ def verify_voice():
             "status": result_msg
         }
         history_collection.insert_one(history_record)
-        print(f"  -> 📝 Đã lưu lịch sử mở cửa: {result_msg}")
+        print(f"  -> Đã lưu lịch sử mở cửa: {result_msg}")
 
         # Bước 4: Trả kết quả về cho ESP32
         return jsonify({
@@ -465,7 +462,6 @@ def verify_voice():
         # Dọn dẹp file tạm
         if os.path.exists(FILE_KIEM_TRA):
             os.remove(FILE_KIEM_TRA)
-
 
 # ==========================================
 # 4. API LẤY LỊCH SỬ MỞ CỬA - /history
@@ -507,7 +503,6 @@ def get_door_history():
     except Exception as e:
         print(f"[!] Lỗi lấy lịch sử: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
-
 
 # ==========================================
 # 5. API ĐỔI THÔNG TIN / GIỌNG NÓI - /changeInformation
@@ -610,7 +605,7 @@ def change_information():
 
 
 if __name__ == '__main__':
-    # 1. Dán Auth Token của bạn vào đây
+    # 1. Dán Auth Token được cung cấp vào đây
     ngrok_token = os.environ.get("NGROK_AUTH_TOKEN")
     if ngrok_token:
         ngrok.set_auth_token(ngrok_token)
@@ -619,8 +614,8 @@ if __name__ == '__main__':
     ngrok_domain = os.environ.get("NGROK_DOMAIN", "broken-unrigged-scolding.ngrok-free.dev")
     public_url = ngrok.connect(5000, domain=ngrok_domain).public_url
     
-    print(f"\n[🚀] NGROK TUNNEL ĐÃ MỞ CỐ ĐỊNH TẠI: {public_url}")
-    print(f"[🚀] API Swagger test: {public_url}/apidocs/\n")
+    print(f"\n[!] NGROK TUNNEL ĐÃ MỞ CỐ ĐỊNH TẠI: {public_url}")
+    print(f"[!] API Swagger test: {public_url}/apidocs/\n")
 
     # 3. Khởi chạy server Flask
     app.run(host='0.0.0.0', port=5000)
