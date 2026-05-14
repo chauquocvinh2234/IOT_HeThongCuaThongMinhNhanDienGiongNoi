@@ -1,0 +1,29 @@
+<mxfile host="Electron">
+  <diagram name="Page-1" id="S8fnEB-mgtYnemfA5ct6">
+    <mxGraphModel dx="1414" dy="841" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="arQjmqj_w5LGI_pEJz3f-1" parent="1" style="verticalLabelPosition=bottom;aspect=fixed;html=1;shape=mxgraph.salesforce.platform2;fillColorStyles=fillColor2,fillColor3;fillColor2=#200d38;fillColor3=#ffffff;fillColor=none;strokeColor=none;fontSize=18;" value="HC-SR04" vertex="1">
+          <mxGeometry height="60" width="60" x="330" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="arQjmqj_w5LGI_pEJz3f-2" edge="1" parent="1" style="endArrow=none;dashed=1;html=1;rounded=0;fontColor=#FF3333;strokeWidth=5;strokeColor=#FF3333;" value="">
+          <mxGeometry height="50" relative="1" width="50" as="geometry">
+            <Array as="points" />
+            <mxPoint x="160" y="220" as="sourcePoint" />
+            <mxPoint x="160" y="60" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arQjmqj_w5LGI_pEJz3f-6" parent="1" style="shape=curlyBracket;whiteSpace=wrap;html=1;rounded=1;flipH=1;labelPosition=left;verticalLabelPosition=top;align=right;verticalAlign=bottom;legacyAnchorPoints=0;strokeWidth=5;rotation=90;textDirection=vertical-lr;strokeColor=#FF3333;" value="" vertex="1">
+          <mxGeometry height="110" width="20" x="80" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="arQjmqj_w5LGI_pEJz3f-5" parent="1" style="shape=curlyBracket;whiteSpace=wrap;html=1;rounded=1;flipH=1;labelPosition=left;verticalLabelPosition=top;align=right;verticalAlign=bottom;legacyAnchorPoints=0;strokeWidth=5;rotation=90;textDirection=vertical-lr;strokeColor=#FF3333;" value="" vertex="1">
+          <mxGeometry height="110" width="20" x="220" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="arQjmqj_w5LGI_pEJz3f-7" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;autosize=1;resizable=0;fontSize=18;" value="Vùng hợp lệ&lt;br&gt;[0, 10] cm" vertex="1">
+          <mxGeometry height="60" width="120" x="170" y="245" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
