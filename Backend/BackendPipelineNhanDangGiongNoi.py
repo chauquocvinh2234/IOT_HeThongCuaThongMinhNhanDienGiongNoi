@@ -64,6 +64,10 @@ client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
 users_collection = db["users"]
 history_collection = db["door_history"]
+command_collection = db["door_commands"]
+# Khởi tạo mặc định nếu chưa có
+if not command_collection.find_one({"_id": "remote"}):
+    command_collection.insert_one({"_id": "remote", "action": "none"})
 
 print("[+] Đã kết nối MongoDB Atlas thành công!")
 
@@ -602,6 +606,107 @@ def change_information():
     except Exception as e:
         print(f"[!] Lỗi cập nhật thông tin: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+# ==========================================
+# 6. API ĐIỀU KHIỂN CỬA TỪ ĐIỆN THOẠI - /remote_control
+# ==========================================
+@app.route('/remote_control', methods=['POST'])
+def remote_control():
+    """
+    Nhận lệnh mở cửa từ ứng dụng di động.
+    ---
+    tags:
+      - Điều khiển (Control)
+    consumes:
+      - application/json
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          properties:
+            action:
+              type: string
+              example: open
+              description: Lệnh điều khiển (hiện tại hỗ trợ "open")
+            user_id:
+              type: string
+              example: 60d5ecb8b5c9c62b3c7c4f4a
+              description: ID của người dùng thực hiện lệnh
+    responses:
+      200:
+        description: Gửi lệnh thành công
+      400:
+        description: Lỗi dữ liệu gửi lên
+    """
+    data = request.get_json()
+    
+    if not data or 'action' not in data:
+        return jsonify({"status": "error", "message": "Thiếu tham số 'action'"}), 400
+        
+    action = data['action']
+    user_id = data.get('user_id')
+    
+    if action == "open":
+        # Cập nhật lệnh vào database
+        command_collection.update_one({"_id": "remote"}, {"$set": {"action": "open"}})
+        
+        # Tìm tên người dùng từ MongoDB
+        fullname = "Không xác định"
+        if user_id:
+            try:
+                user = users_collection.find_one({"_id": ObjectId(user_id)})
+                if user:
+                    fullname = user.get("personal_information", {}).get("fullname", "Không xác định")
+            except:
+                pass
+        
+        print(f"[+] Điện thoại yêu cầu MỞ CỬA từ xa bởi: {fullname}!")
+        notify_telegram(f"📱 Có yêu cầu mở cửa từ xa qua điện thoại bởi: {fullname}!")
+        
+        # Lưu vào lịch sử mở cửa
+        history_record = {
+            "user_id": ObjectId(user_id) if (user_id and fullname != "Không xác định") else None,
+            "fullname": f"{fullname} (Mở từ xa)",
+            "time": datetime.now(),
+            "status": "ACCEPTED"
+        }
+        history_collection.insert_one(history_record)
+        
+        return jsonify({"status": "success", "message": "Đã gửi lệnh mở cửa đến khóa thông minh"})
+    
+    return jsonify({"status": "error", "message": "Lệnh không hợp lệ"}), 400
+
+# ==========================================
+# 7. API CHO ESP32 KIỂM TRA LỆNH - /check_door_command
+# ==========================================
+@app.route('/check_door_command', methods=['GET'])
+def check_door_command():
+    """
+    ESP32 sẽ gọi API này liên tục để kiểm tra lệnh mở từ điện thoại.
+    ---
+    tags:
+      - Điều khiển (Control)
+    responses:
+      200:
+        description: Trả về trạng thái lệnh hiện tại
+        schema:
+          type: object
+          properties:
+            command:
+              type: string
+              example: none
+              description: "Lệnh ('open' hoặc 'none')"
+    """
+    cmd = command_collection.find_one({"_id": "remote"})
+    action = cmd["action"] if cmd else "none"
+    
+    if action == "open":
+        # Đã đọc xong lệnh, phải reset ngay về "none" để cửa không mở đi mở lại
+        command_collection.update_one({"_id": "remote"}, {"$set": {"action": "none"}})
+        
+    return jsonify({"command": action})
 
 
 if __name__ == '__main__':

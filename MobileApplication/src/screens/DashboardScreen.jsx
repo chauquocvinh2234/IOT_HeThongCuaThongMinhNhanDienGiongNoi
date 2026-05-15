@@ -1,8 +1,11 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   View,
   Text,
   Animated,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -24,6 +27,37 @@ export default function DashboardScreen() {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(40)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
+
+  const [isOpening, setIsOpening] = useState(false);
+
+  const handleOpenDoor = async () => {
+    setIsOpening(true);
+    try {
+      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/remote_control`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'open',
+          user_id: user?.user_id
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.status === 'success') {
+        Alert.alert('Thành công', 'Đã mở cửa thành công!');
+      } else {
+        Alert.alert('Thất bại', result.message || 'Không thể mở cửa.');
+      }
+    } catch (error) {
+      console.error('[Remote Control] Lỗi:', error);
+      Alert.alert('Lỗi kết nối', 'Không thể kết nối tới server.');
+    } finally {
+      setIsOpening(false);
+    }
+  };
 
   useEffect(() => {
     Animated.parallel([
@@ -110,6 +144,34 @@ export default function DashboardScreen() {
             Hệ thống đang{' '}
             <Text style={{ color: COLORS.secondary, fontWeight: '600' }}>trực tuyến</Text>
           </Text>
+        </Animated.View>
+
+        {/* Nút Mở Cửa Từ Xa */}
+        <Animated.View
+          className="mt-8 w-full"
+          style={{
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }],
+          }}
+        >
+          <TouchableOpacity
+            className={`w-full h-16 rounded-2xl flex-row justify-center items-center shadow-lg shadow-primary/30 ${isOpening ? 'bg-primary/60' : 'bg-primary'}`}
+            onPress={handleOpenDoor}
+            disabled={isOpening}
+            activeOpacity={0.8}
+          >
+            {isOpening ? (
+              <>
+                <ActivityIndicator color="#FFFFFF" size="small" />
+                <Text className="text-white text-lg font-bold ml-3">Đang mở...</Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="key-outline" size={24} color="#FFFFFF" />
+                <Text className="text-white text-lg font-bold ml-2">Mở Cửa Từ Xa</Text>
+              </>
+            )}
+          </TouchableOpacity>
         </Animated.View>
 
       </View>

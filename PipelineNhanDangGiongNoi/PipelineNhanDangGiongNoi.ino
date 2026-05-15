@@ -48,6 +48,13 @@ Servo doorServo;
 #define RECORD_TIME_SEC 5
 const uint32_t wavDataSize = RECORD_TIME_SEC * SAMPLE_RATE * 2;
 
+// Khai báo biến cho hệ thống Polling (Hỏi vòng) Server
+unsigned long lastCheckTime = 0;
+const unsigned long checkInterval = 2000; // ESP32 sẽ hỏi Server mỗi 2 giây
+
+// Khai báo TaskHandle cho luồng chạy ngầm trên Core 0
+TaskHandle_t RemoteTask;
+
 // -------------------------------------------------------------------------
 
 // Khai báo nguyên mẫu hàm
@@ -57,6 +64,7 @@ float getDistance();
 void controlSystemLogic(float distance, int distance_threshold);
 void generateWavHeader(uint8_t* wav_header, uint32_t wav_size, uint32_t sample_rate);
 void updateDisplay(int state, String extra = "");
+void checkRemoteCommand();
 
 void configModeCallback (WiFiManager *myWiFiManager) {
   Serial.println("[@] Đã vào chế độ Cài đặt WiFi");
@@ -67,6 +75,14 @@ void configModeCallback (WiFiManager *myWiFiManager) {
   /*
       - myWiFiManager->getConfigPortalSSID(): Trích xuất tên WiFi mà mạch đang phát ra.
   */
+}
+
+// Hàm này sẽ chạy hoàn toàn độc lập trên Core 0
+void remoteCommandTask(void * pvParameters) {
+  for(;;) {
+    checkRemoteCommand(); // Gọi hàm kiểm tra API
+    vTaskDelay(2000 / portTICK_PERIOD_MS); // Cho Core 0 nghỉ ngơi 2 giây, thay thế cho logic millis() cũ
+  }
 }
 
 void setup() {
@@ -131,12 +147,16 @@ void setup() {
 
   // Khởi tạo INMP441
   initMicrophone();
+
+  // Giao nhiệm vụ check API từ xa cho Core 0 chạy ngầm với bộ nhớ RAM 8192 bytes
+  xTaskCreatePinnedToCore(remoteCommandTask, "RemoteTask", 8192, NULL, 1, &RemoteTask, 0);
 }
 
 void loop() {
-  // Lấy khoảng cách được trả về từ HC-SR04
+  // 1. Lấy khoảng cách được trả về từ HC-SR04
   float distance = getDistance();
-  // Điều khiển logic của hệ thống dựa trên khoảng cách được trả về
+  
+  // 2. Điều khiển logic của hệ thống nhận diện
   controlSystemLogic(distance, DISTANCE_THRESHOLD);
 
   delay(100);
@@ -436,4 +456,64 @@ void updateDisplay(int state, String extra) {
     }
   }
   u8g2.sendBuffer();
+}
+
+// Hàm ping lên Server để kiểm tra lệnh mở từ xa
+void checkRemoteCommand() {
+  if(WiFi.status() == WL_CONNECTED){
+    WiFiClientSecure client;
+    client.setInsecure(); // Bỏ qua xác thực chứng chỉ SSL
+    HTTPClient http;
+    
+    // Tái sử dụng base URL từ file secrets.h (đổi đuôi /verify thành /check_door_command)
+    String url = String(serverName); 
+    url.replace("/verify", "/check_door_command");
+
+    http.begin(client, url);
+    http.setTimeout(5000); // Set timeout ngắn 5s để không làm treo mạch
+    int httpResponseCode = http.GET();
+    
+    if (httpResponseCode == 200) {
+      String payload = http.getString();
+      
+      // Bóc tách JSON
+      DynamicJsonDocument doc(512);
+      DeserializationError error = deserializeJson(doc, payload);
+      
+      if (!error) {
+        String cmd = doc["command"];
+        
+        // Nếu Server báo có lệnh "open" từ ứng dụng điện thoại
+        if (cmd == "open") {
+          Serial.println("[@] NHẬN LỆNH MỞ CỬA TỪ ĐIỆN THOẠI!");
+          updateDisplay(4, "Mở cửa từ xa...");
+          
+          // Bíp còi và nháy đèn xanh 2 lần
+          for(int i = 0; i < 2; i++) {
+            digitalWrite(BUZZER_PIN, HIGH);
+            digitalWrite(G1_LED_PIN, HIGH);
+            delay(100); 
+            digitalWrite(BUZZER_PIN, LOW);
+            digitalWrite(G1_LED_PIN, LOW);
+            delay(100);
+          }
+          
+          digitalWrite(G1_LED_PIN, HIGH);
+          
+          // Mở Servo
+          doorServo.write(90);
+          
+          // Giữ cửa mở trong 5 giây
+          delay(5000); 
+          
+          // Tự động đóng cửa lại
+          doorServo.write(0);
+          digitalWrite(G1_LED_PIN, LOW);
+          
+          updateDisplay(0); // Trả màn hình về trạng thái chờ
+        }
+      }
+    }
+    http.end();
+  }
 }
