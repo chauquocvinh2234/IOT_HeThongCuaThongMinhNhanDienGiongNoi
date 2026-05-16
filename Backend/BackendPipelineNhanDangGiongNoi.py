@@ -1,6 +1,7 @@
 import os
 import requests
 import threading
+import paho.mqtt.client as mqtt
 from dotenv import load_dotenv
 
 # Load variables from .env file
@@ -64,12 +65,58 @@ client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
 users_collection = db["users"]
 history_collection = db["door_history"]
-command_collection = db["door_commands"]
-# Khởi tạo mặc định nếu chưa có
-if not command_collection.find_one({"_id": "remote"}):
-    command_collection.insert_one({"_id": "remote", "action": "none"})
+
 
 print("[+] Đã kết nối MongoDB Atlas thành công!")
+
+# ==========================================
+# CẤU HÌNH MQTT BROKER (HiveMQ Public)
+# ==========================================
+MQTT_BROKER = "broker.hivemq.com"
+MQTT_PORT = 1883
+MQTT_TOPIC_CMD = "smartdoor/command"   # Topic gửi lệnh tới ESP32
+MQTT_TOPIC_STATUS = "smartdoor/status" # Topic nhận trạng thái từ ESP32
+
+# Biến theo dõi trạng thái online/offline của ESP32 (được cập nhật bởi MQTT callback)
+esp32_online = False
+
+def on_mqtt_connect(client, userdata, flags, reason_code, properties):
+    """Callback khi kết nối MQTT Broker thành công."""
+    if reason_code == 0:
+        print("[+] Đã kết nối MQTT Broker thành công!")
+        client.subscribe(MQTT_TOPIC_STATUS)
+        print(f"  -> Đã subscribe topic: {MQTT_TOPIC_STATUS}")
+    else:
+        print(f"[!] Kết nối MQTT thất bại, mã lỗi: {reason_code}")
+
+def on_mqtt_message(client, userdata, msg):
+    """Callback khi nhận message từ ESP32 trên topic smartdoor/status."""
+    global esp32_online
+    payload = msg.payload.decode()
+    print(f"[MQTT] Nhận: '{payload}' trên topic: {msg.topic}")
+    
+    if msg.topic == MQTT_TOPIC_STATUS:
+        if payload == "online":
+            esp32_online = True
+            print("[MQTT] ✅ ESP32 đã online và sẵn sàng!")
+        elif payload == "opened":
+            print("[MQTT] 🔓 ESP32 xác nhận: Cửa đã được mở thành công!")
+        elif payload == "closed":
+            print("[MQTT] 🔒 ESP32 xác nhận: Cửa đã đóng lại!")
+        elif payload == "offline":
+            esp32_online = False
+            print("[MQTT] ⚠️ ESP32 đã offline (mất kết nối)!")
+
+mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+mqtt_client.on_connect = on_mqtt_connect
+mqtt_client.on_message = on_mqtt_message
+
+try:
+    mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+    mqtt_client.loop_start()  # Chạy vòng lặp MQTT trong luồng nền
+    print("[+] MQTT Client đã khởi động!")
+except Exception as e:
+    print(f"[!] Lỗi kết nối MQTT: {e}")
 
 # ==========================================
 # NẠP MÔ HÌNH WESPEAKER
@@ -649,8 +696,13 @@ def remote_control():
     user_id = data.get('user_id')
     
     if action == "open":
-        # Cập nhật lệnh vào database
-        command_collection.update_one({"_id": "remote"}, {"$set": {"action": "open"}})
+        # Kiểm tra trạng thái ESP32 trước khi gửi lệnh
+        if not esp32_online:
+            print(f"[!] Từ chối lệnh mở cửa: ESP32 đang OFFLINE!")
+            return jsonify({
+                "status": "error",
+                "message": "Thiết bị khóa thông minh đang offline. Vui lòng kiểm tra nguồn điện và kết nối WiFi của mạch ESP32."
+            }), 503
         
         # Tìm tên người dùng từ MongoDB
         fullname = "Không xác định"
@@ -662,51 +714,30 @@ def remote_control():
             except:
                 pass
         
-        print(f"[+] Điện thoại yêu cầu MỞ CỬA từ xa bởi: {fullname}!")
-        notify_telegram(f"📱 Có yêu cầu mở cửa từ xa qua điện thoại bởi: {fullname}!")
+        # Publish lệnh mở cửa qua MQTT
+        result = mqtt_client.publish(MQTT_TOPIC_CMD, "open", qos=1)
         
-        # Lưu vào lịch sử mở cửa
-        history_record = {
-            "user_id": ObjectId(user_id) if (user_id and fullname != "Không xác định") else None,
-            "fullname": f"{fullname} (Mở từ xa)",
-            "time": datetime.now(),
-            "status": "ACCEPTED"
-        }
-        history_collection.insert_one(history_record)
-        
-        return jsonify({"status": "success", "message": "Đã gửi lệnh mở cửa đến khóa thông minh"})
+        if result.rc == mqtt.MQTT_ERR_SUCCESS:
+            print(f"[+] Đã gửi lệnh MỞ CỬA qua MQTT bởi: {fullname}!")
+            notify_telegram(f"📱 Có yêu cầu mở cửa từ xa qua điện thoại bởi: {fullname}!")
+            
+            # Lưu vào lịch sử mở cửa
+            history_record = {
+                "user_id": ObjectId(user_id) if (user_id and fullname != "Không xác định") else None,
+                "fullname": f"{fullname} (Mở từ xa)",
+                "time": datetime.now(),
+                "status": "ACCEPTED"
+            }
+            history_collection.insert_one(history_record)
+            
+            return jsonify({"status": "success", "message": "Đã gửi lệnh mở cửa thành công đến khóa thông minh!"})
+        else:
+            print(f"[!] Lỗi gửi MQTT: rc={result.rc}")
+            return jsonify({"status": "error", "message": "Không thể gửi lệnh qua MQTT. Vui lòng thử lại."}), 503
     
     return jsonify({"status": "error", "message": "Lệnh không hợp lệ"}), 400
 
-# ==========================================
-# 7. API CHO ESP32 KIỂM TRA LỆNH - /check_door_command
-# ==========================================
-@app.route('/check_door_command', methods=['GET'])
-def check_door_command():
-    """
-    ESP32 sẽ gọi API này liên tục để kiểm tra lệnh mở từ điện thoại.
-    ---
-    tags:
-      - Điều khiển (Control)
-    responses:
-      200:
-        description: Trả về trạng thái lệnh hiện tại
-        schema:
-          type: object
-          properties:
-            command:
-              type: string
-              example: none
-              description: "Lệnh ('open' hoặc 'none')"
-    """
-    cmd = command_collection.find_one({"_id": "remote"})
-    action = cmd["action"] if cmd else "none"
-    
-    if action == "open":
-        # Đã đọc xong lệnh, phải reset ngay về "none" để cửa không mở đi mở lại
-        command_collection.update_one({"_id": "remote"}, {"$set": {"action": "none"}})
-        
-    return jsonify({"command": action})
+
 
 
 if __name__ == '__main__':

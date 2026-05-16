@@ -47,13 +47,21 @@ export default function DashboardScreen() {
       const result = await response.json();
 
       if (response.ok && result.status === 'success') {
-        Alert.alert('Thành công', 'Đã mở cửa thành công!');
+        // Lệnh đã được gửi thành công tới ESP32 qua MQTT
+        Alert.alert('✅ Thành công', result.message || 'Đã gửi lệnh mở cửa thành công!');
+      } else if (response.status === 503) {
+        // ESP32 đang offline — không thể mở cửa
+        Alert.alert(
+          '⚠️ Thiết bị Offline',
+          result.message || 'Khóa thông minh đang offline. Vui lòng kiểm tra nguồn điện và WiFi của mạch ESP32.'
+        );
       } else {
-        Alert.alert('Thất bại', result.message || 'Không thể mở cửa.');
+        // Các lỗi khác (400, 500, ...)
+        Alert.alert('❌ Thất bại', result.message || 'Không thể mở cửa. Vui lòng thử lại.');
       }
     } catch (error) {
       console.error('[Remote Control] Lỗi:', error);
-      Alert.alert('Lỗi kết nối', 'Không thể kết nối tới server.');
+      Alert.alert('🔌 Lỗi kết nối', 'Không thể kết nối tới máy chủ. Vui lòng kiểm tra kết nối mạng.');
     } finally {
       setIsOpening(false);
     }

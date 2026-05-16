@@ -4,6 +4,7 @@
 #include <ESP32Servo.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <PubSubClient.h>
 #include <WiFiClientSecure.h>
 #include "esp_heap_caps.h"
 #include "secrets.h"
@@ -26,7 +27,7 @@ Servo doorServo;
 // Khai báo chân cho HC-SR04 và các đèn LED để tương tác với HC-SR04
 #define TRIG_PIN 41 
 #define ECHO_PIN 42 
-#define DISTANCE_THRESHOLD 10
+#define DISTANCE_THRESHOLD 20
 #define Y_LED_PIN 47 
 #define G_LED_PIN 48 
 
@@ -48,12 +49,17 @@ Servo doorServo;
 #define RECORD_TIME_SEC 5
 const uint32_t wavDataSize = RECORD_TIME_SEC * SAMPLE_RATE * 2;
 
-// Khai báo biến cho hệ thống Polling (Hỏi vòng) Server
-unsigned long lastCheckTime = 0;
-const unsigned long checkInterval = 2000; // ESP32 sẽ hỏi Server mỗi 2 giây
+// Khai báo cấu hình MQTT (Sử dụng Broker công cộng của HiveMQ)
+#define MQTT_BROKER "broker.hivemq.com"
+#define MQTT_PORT 1883
+#define MQTT_TOPIC_CMD "smartdoor/command"   // Topic nhận lệnh mở cửa
+#define MQTT_TOPIC_STATUS "smartdoor/status" // Topic gửi trạng thái ESP32
 
-// Khai báo TaskHandle cho luồng chạy ngầm trên Core 0
-TaskHandle_t RemoteTask;
+WiFiClient espMqttClient;
+PubSubClient mqttClient(espMqttClient);
+
+volatile bool mqttOpenDoorFlag = false;      // Cờ báo có lệnh mở cửa từ MQTT
+unsigned long lastMqttReconnectAttempt = 0;  // Thời điểm thử kết nối lại MQTT lần cuối
 
 // -------------------------------------------------------------------------
 
@@ -64,7 +70,9 @@ float getDistance();
 void controlSystemLogic(float distance, int distance_threshold);
 void generateWavHeader(uint8_t* wav_header, uint32_t wav_size, uint32_t sample_rate);
 void updateDisplay(int state, String extra = "");
-void checkRemoteCommand();
+void mqttCallback(char* topic, byte* payload, unsigned int length);
+void reconnectMQTT();
+void handleRemoteDoorOpen();
 
 void configModeCallback (WiFiManager *myWiFiManager) {
   Serial.println("[@] Đã vào chế độ Cài đặt WiFi");
@@ -77,13 +85,6 @@ void configModeCallback (WiFiManager *myWiFiManager) {
   */
 }
 
-// Hàm này sẽ chạy hoàn toàn độc lập trên Core 0
-void remoteCommandTask(void * pvParameters) {
-  for(;;) {
-    checkRemoteCommand(); // Gọi hàm kiểm tra API
-    vTaskDelay(2000 / portTICK_PERIOD_MS); // Cho Core 0 nghỉ ngơi 2 giây, thay thế cho logic millis() cũ
-  }
-}
 
 void setup() {
   Serial.begin(115200);
@@ -93,7 +94,6 @@ void setup() {
   Wire.begin(8, 9); // SDA = 8, SCL = 9
   u8g2.begin();
   u8g2.enableUTF8Print(); // Kích hoạt in Tiếng Việt
-
   updateDisplay(4, "Đang kết nối WiFi...");
 
   WiFiManager wifiManager;
@@ -148,15 +148,34 @@ void setup() {
   // Khởi tạo INMP441
   initMicrophone();
 
-  // Giao nhiệm vụ check API từ xa cho Core 0 chạy ngầm với bộ nhớ RAM 8192 bytes
-  xTaskCreatePinnedToCore(remoteCommandTask, "RemoteTask", 8192, NULL, 1, &RemoteTask, 0);
+  // Khởi tạo kết nối MQTT tới Broker
+  mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
+  mqttClient.setCallback(mqttCallback);
+  mqttClient.setBufferSize(256);
+  reconnectMQTT();
 }
 
 void loop() {
-  // 1. Lấy khoảng cách được trả về từ HC-SR04
+  // 1. Duy trì kết nối MQTT (tự động reconnect mỗi 5 giây nếu mất kết nối)
+  if (!mqttClient.connected()) {
+    unsigned long now = millis();
+    if (now - lastMqttReconnectAttempt > 5000) {
+      lastMqttReconnectAttempt = now;
+      reconnectMQTT();
+    }
+  }
+  mqttClient.loop(); // Xử lý các message MQTT đến
+
+  // 2. Xử lý lệnh mở cửa từ MQTT (nếu có)
+  if (mqttOpenDoorFlag) {
+    mqttOpenDoorFlag = false;
+    handleRemoteDoorOpen();
+  }
+
+  // 3. Lấy khoảng cách được trả về từ HC-SR04
   float distance = getDistance();
   
-  // 2. Điều khiển logic của hệ thống nhận diện
+  // 4. Điều khiển logic của hệ thống nhận diện
   controlSystemLogic(distance, DISTANCE_THRESHOLD);
 
   delay(100);
@@ -458,62 +477,86 @@ void updateDisplay(int state, String extra) {
   u8g2.sendBuffer();
 }
 
-// Hàm ping lên Server để kiểm tra lệnh mở từ xa
-void checkRemoteCommand() {
-  if(WiFi.status() == WL_CONNECTED){
-    WiFiClientSecure client;
-    client.setInsecure(); // Bỏ qua xác thực chứng chỉ SSL
-    HTTPClient http;
-    
-    // Tái sử dụng base URL từ file secrets.h (đổi đuôi /verify thành /check_door_command)
-    String url = String(serverName); 
-    url.replace("/verify", "/check_door_command");
+// =========================================================================
+// CÁC HÀM MQTT (Thay thế cho cơ chế Polling cũ)
+// =========================================================================
 
-    http.begin(client, url);
-    http.setTimeout(5000); // Set timeout ngắn 5s để không làm treo mạch
-    int httpResponseCode = http.GET();
-    
-    if (httpResponseCode == 200) {
-      String payload = http.getString();
-      
-      // Bóc tách JSON
-      DynamicJsonDocument doc(512);
-      DeserializationError error = deserializeJson(doc, payload);
-      
-      if (!error) {
-        String cmd = doc["command"];
-        
-        // Nếu Server báo có lệnh "open" từ ứng dụng điện thoại
-        if (cmd == "open") {
-          Serial.println("[@] NHẬN LỆNH MỞ CỬA TỪ ĐIỆN THOẠI!");
-          updateDisplay(4, "Mở cửa từ xa...");
-          
-          // Bíp còi và nháy đèn xanh 2 lần
-          for(int i = 0; i < 2; i++) {
-            digitalWrite(BUZZER_PIN, HIGH);
-            digitalWrite(G1_LED_PIN, HIGH);
-            delay(100); 
-            digitalWrite(BUZZER_PIN, LOW);
-            digitalWrite(G1_LED_PIN, LOW);
-            delay(100);
-          }
-          
-          digitalWrite(G1_LED_PIN, HIGH);
-          
-          // Mở Servo
-          doorServo.write(90);
-          
-          // Giữ cửa mở trong 5 giây
-          delay(5000); 
-          
-          // Tự động đóng cửa lại
-          doorServo.write(0);
-          digitalWrite(G1_LED_PIN, LOW);
-          
-          updateDisplay(0); // Trả màn hình về trạng thái chờ
-        }
-      }
-    }
-    http.end();
+// Hàm callback được gọi tự động khi có message MQTT đến
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  /*
+    - Luồng xử lý:
+      1. Đọc nội dung message từ payload (mảng byte) và chuyển sang String.
+      2. Kiểm tra nếu topic là "smartdoor/command" và nội dung là "open"
+         thì bật cờ mqttOpenDoorFlag = true.
+      3. Cờ này sẽ được kiểm tra trong hàm loop() để thực thi mở cửa.
+         (Không mở cửa trực tiếp trong callback vì delay() dài sẽ gây mất kết nối MQTT)
+  */
+  String message = "";
+  for (unsigned int i = 0; i < length; i++) {
+    message += (char)payload[i];
   }
+  
+  Serial.println("[@] MQTT nhận message: " + message + " | Topic: " + String(topic));
+  
+  if (String(topic) == MQTT_TOPIC_CMD && message == "open") {
+    mqttOpenDoorFlag = true;
+  }
+}
+
+// Hàm kết nối (hoặc kết nối lại) tới MQTT Broker
+void reconnectMQTT() {
+  /*
+    - Luồng xử lý:
+      1. Tạo Client ID ngẫu nhiên để tránh xung đột khi nhiều ESP32 cùng kết nối.
+      2. Thiết lập Last Will & Testament (LWT): Nếu ESP32 mất kết nối đột ngột,
+         Broker sẽ tự động publish "offline" lên topic smartdoor/status.
+      3. Sau khi kết nối thành công, subscribe topic smartdoor/command để nhận lệnh
+         và publish "online" lên smartdoor/status để Backend biết ESP32 đang hoạt động.
+  */
+  Serial.print("[@] Đang kết nối MQTT Broker...");
+  
+  String clientId = "ESP32SmartDoor-" + String(random(0xffff), HEX);
+  
+  // Tham số connect: clientId, username, password, willTopic, willQoS, willRetain, willMessage
+  if (mqttClient.connect(clientId.c_str(), NULL, NULL, MQTT_TOPIC_STATUS, 1, true, "offline")) {
+    Serial.println(" Thành công!");
+    mqttClient.subscribe(MQTT_TOPIC_CMD, 1); // Subscribe với QoS 1 (đảm bảo nhận ít nhất 1 lần)
+    mqttClient.publish(MQTT_TOPIC_STATUS, "online", true); // Retained message
+    Serial.println("[@] Đã subscribe topic: " + String(MQTT_TOPIC_CMD));
+  } else {
+    Serial.print(" Thất bại! Mã lỗi: ");
+    Serial.println(mqttClient.state());
+  }
+}
+
+// Hàm xử lý mở cửa khi nhận lệnh từ MQTT (thay thế logic cũ trong checkRemoteCommand)
+void handleRemoteDoorOpen() {
+  Serial.println("[@] NHẬN LỆNH MỞ CỬA TỪ ĐIỆN THOẠI (MQTT)!");
+  updateDisplay(4, "Mở cửa từ xa...");
+  
+  // Bíp còi và nháy đèn xanh 2 lần
+  for(int i = 0; i < 2; i++) {
+    digitalWrite(BUZZER_PIN, HIGH);
+    digitalWrite(G1_LED_PIN, HIGH);
+    delay(100); 
+    digitalWrite(BUZZER_PIN, LOW);
+    digitalWrite(G1_LED_PIN, LOW);
+    delay(100);
+  }
+  
+  digitalWrite(G1_LED_PIN, HIGH);
+  doorServo.write(90); // Mở cửa
+  
+  // Thông báo cho Backend biết cửa đã mở thật
+  mqttClient.publish(MQTT_TOPIC_STATUS, "opened", true);
+  
+  delay(5000); // Giữ cửa mở 5 giây
+  
+  doorServo.write(0); // Đóng cửa
+  digitalWrite(G1_LED_PIN, LOW);
+  
+  // Thông báo cho Backend biết cửa đã đóng
+  mqttClient.publish(MQTT_TOPIC_STATUS, "closed", true);
+  
+  updateDisplay(0); // Trả màn hình về trạng thái chờ
 }

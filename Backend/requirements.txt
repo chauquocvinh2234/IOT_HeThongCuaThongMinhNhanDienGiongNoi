@@ -8,4 +8,5 @@ onnxruntime
 pyngrok
 python-dotenv
 requests
+paho-mqtt
 wespeaker @ git+https://github.com/wenet-e2e/wespeaker.git@9ce7995648a281ba6ce6f4e7a33941672ef22779
