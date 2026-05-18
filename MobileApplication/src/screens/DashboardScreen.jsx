@@ -33,10 +33,11 @@ export default function DashboardScreen() {
   const handleOpenDoor = async () => {
     setIsOpening(true);
     try {
-      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/remote_control`, {
+      const response = await fetch(`https://broken-unrigged-scolding.ngrok-free.dev/remote_control`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
         },
         body: JSON.stringify({
           action: 'open',

@@ -41,7 +41,11 @@ export default function HistoryScreen() {
 
   const fetchHistory = async () => {
     try {
-      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/history`);
+      const response = await fetch(`https://broken-unrigged-scolding.ngrok-free.dev/history`, {
+        headers: {
+          'ngrok-skip-browser-warning': 'true',
+        },
+      });
       const result = await response.json();
       if (response.ok && result.status === 'success') {
         setHistory(result.history || []);

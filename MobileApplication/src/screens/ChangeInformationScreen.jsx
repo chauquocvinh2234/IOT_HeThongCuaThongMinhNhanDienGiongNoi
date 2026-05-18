@@ -145,10 +145,11 @@ export default function ChangeInformationScreen({ navigation }) {
         });
       }
 
-      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/changeInformation`, {
+      const response = await fetch(`https://broken-unrigged-scolding.ngrok-free.dev/changeInformation`, {
         method: 'POST',
         headers: {
           'Content-Type': 'multipart/form-data',
+          'ngrok-skip-browser-warning': 'true',
         },
         body: formData,
       });

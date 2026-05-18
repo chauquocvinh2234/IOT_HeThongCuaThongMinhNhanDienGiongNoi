@@ -208,6 +208,7 @@ void controlSystemLogic(float distance, int distance_threshold){
       recordAndSendAudio(); 
       delay(1000);
     }
+    
   } else{
     digitalWrite(Y_LED_PIN, HIGH);
     digitalWrite(G_LED_PIN, LOW);
@@ -439,7 +440,8 @@ void updateDisplay(int state, String extra) {
     u8g2.drawUTF8(15, 35, "Hệ thống khóa");
   } else if (state == 1) {
     u8g2.drawUTF8(5, 25, "Phát hiện người!");
-    u8g2.drawUTF8(5, 45, "Nhấn giữ nút để nói");
+    u8g2.drawUTF8(5, 45, "Nhấn giữ nút");
+    u8g2.drawUTF8(5, 60, "để nói...");
   } else if (state == 2) {
     u8g2.drawUTF8(10, 25, "Đang thu âm...");
     u8g2.setCursor(50, 50);

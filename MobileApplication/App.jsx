@@ -1,5 +1,7 @@
 import './global.css';
-import React from 'react';
+import React, { useEffect } from 'react';
+import { useFonts } from 'expo-font';
+import * as SplashScreen from 'expo-splash-screen';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -15,6 +17,8 @@ import LoginScreen from './src/screens/LoginScreen.jsx';
 import RegisterScreen from './src/screens/RegisterScreen.jsx';
 import ChangeInformationScreen from './src/screens/ChangeInformationScreen.jsx';
 import { AuthProvider } from './src/contexts/AuthContext.jsx';
+
+SplashScreen.preventAutoHideAsync();
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -82,6 +86,20 @@ function MainTabs() {
 }
 
 export default function App() {
+  const [loaded, error] = useFonts({
+    ...Ionicons.font,
+  });
+
+  useEffect(() => {
+    if (loaded || error) {
+      SplashScreen.hideAsync();
+    }
+  }, [loaded, error]);
+
+  if (!loaded && !error) {
+    return null;
+  }
+
   return (
     <AuthProvider>
       <SafeAreaProvider>
